@@ -248,6 +248,49 @@ Getting there hit a real, worth-understanding bug first: every browser request t
 
 ---
 
+## Phase 3: wiring Spring to a real Python service
+
+This is where the two-service architecture (`docs/decisions-and-technical-architecture.md` §11) stopped being a diagram and became two programs actually talking to each other.
+
+### The new pieces
+
+- **`grilld-ai-service/`** — a whole new Python project, scaffolded via `langgraph new --template deep-agent-python`, then trimmed down: no LangSmith cloud sandbox (that template assumes you're deploying to LangSmith's managed platform; Grilld self-hosts), package renamed to `grilld_ai_service`. `graph.py` defines the Orchestrator (Grilld's top-level Deep Agent) with one deliberately fake subagent (`ping`) whose only job is proving delegation works. `app.py` wires a **Postgres checkpointer** — LangGraph's mechanism for remembering a conversation across calls — pointed at the exact same Postgres database `grilld-backend` uses, but writing only to its own tables (`checkpoints`, `checkpoint_blobs`, etc.), never touching Spring's business tables.
+
+- **`HttpAiServiceClient.java`** — the real (not stub) implementation of the `AiServiceClient` interface introduced in Phase 2. It calls the Python service over plain HTTP.
+
+### Two servers, two very different jobs — `langgraph dev` vs `langgraph up`
+
+This tripped up the "does persistence really survive a restart?" verification, and it's worth understanding why. LangGraph ships two ways to run a graph as a server:
+
+- **`langgraph dev`** — a lightweight local dev server. Deliberately **ephemeral**: its own thread/run bookkeeping lives in memory, not the database, so it restarts fast for quick iteration. This is what Spring actually talks to for now.
+- **`langgraph up`** — a full, production-shaped server (an entirely separate Go-based "Core API," not the same code as `dev`) that owns its own Postgres schema (`run`, `thread`, `thread_ttl` tables — different names from the Python SDK's own checkpoint tables) and appears to want a real LangSmith deployment license for full behavior.
+
+The lesson: a checkpointer object you construct yourself in Python code (which is what `app.py` does, and what got proven to genuinely survive a restart via a direct script test and an automated pytest) is a *different thing* from whatever persistence the server wrapping your graph uses when a client talks to it over HTTP. Proving "my code's checkpointer logic is correct" and proving "the server Spring actually calls persists across a restart" turned out to be two separate claims — the first is proven; the second needs `langgraph up`'s fuller setup (or an equivalent), which is real infrastructure work deliberately deferred rather than rushed — consistent with `docs/product-and-architecture.md`'s existing "Grilld's own hosting is intentionally left undecided" stance. `langgraph dev` remains exactly right for continued local development in the meantime.
+
+### Proving the real wiring, end to end
+
+With `langgraph dev` running and a real (Haiku, for cost) API key:
+
+```
+Spring: POST /api/v1/sessions  (with a real Google-issued JWT)
+  → HttpAiServiceClient creates a LangGraph "thread" (POST /threads,
+    using the Grilld session id directly as the thread id - no separate
+    mapping needed)
+  → runs the Orchestrator against it (POST /threads/{id}/runs/wait)
+  → Python calls real Claude, which calls the ping subagent's echo tool
+  → response flows back through Spring, gets persisted as a Turn
+```
+
+This worked on the first real attempt after fixing one bug: the LangGraph server requires its graph-factory function's parameters to be explicitly typed (`RunnableConfig`, `ServerRuntime`) so it can inspect and call them correctly - an untyped `def get_graph(config=None, runtime=None)` gets rejected outright, not silently ignored.
+
+### Other things that came up
+
+- **Windows can't run psycopg's async mode under its default event loop.** Fixed once, at package import time (`grilld_ai_service/__init__.py`), so every entry point (tests, `langgraph dev`, ad-hoc scripts) gets the fix automatically without needing to remember it. No-op on Linux/macOS, which is where this actually deploys.
+- **Creating the same LangGraph thread twice returns `409 Conflict`**, not a silent no-op. `HttpAiServiceClient` treats that specific response as "already set up, carry on" rather than an error - this matters because Spring calls thread-creation on every turn, not just the first one for a session.
+- **Docker Desktop crashed mid-session** (a WSL2 backend issue, unrelated to any of this code) and briefly produced a `ConnectionTimeout` that looked like a real bug at first. Worth remembering as a general debugging instinct: when a previously-working connection suddenly times out with no code changes nearby, check whether the *infrastructure* is still there before assuming the code broke.
+
+---
+
 ## What's next
 
-Phase 1 (repo, Spring Boot skeleton, full schema, Google login + JWT) and Phase 2 (memory layer + a provably-working session/turn pipeline, backed by a stand-in AI service) are both **fully verified**, including a real end-to-end Google login — see `docs/phases/phase-1/` and `docs/phases/phase-2/` for the complete, all-checked verification checklists. Phase 3 is next: the actual Python AI service, and swapping `StubAiServiceClient` for a real implementation.
+Phases 1–3 are functionally complete and genuinely verified — real Google login, a real interview/turn pipeline, and now Spring actually calling a real (if still simple) Python AI service and getting real Claude-generated responses back. See each phase's `docs/phases/phase-N/` for the full checklist, including what's proven versus honestly deferred. Phase 4 is next: the real Interrogator (a LangGraph subgraph with the dynamic slot-graph logic from `docs/interrogation-engine.md`) and the Rubric Agent, replacing the placeholder logic in both `StubAiServiceClient`/`HttpAiServiceClient` and the trivial `ping` subagent with the real thing.
