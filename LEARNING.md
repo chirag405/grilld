@@ -218,6 +218,28 @@ With potentially dozens of open questions ("slots") at once, something has to de
 
 ---
 
+## The stub AI service, and proving the whole loop works before Python exists
+
+Phase 3 (a separate Python program) is where the real AI logic lives — but that's not built yet, and Phase 2 needs to prove the *Spring* side of the pipeline actually works. The trick: define an **interface** (`AiServiceClient`) describing exactly what Spring needs from "whatever answers a question" — one method, `nextTurn(context) → result` — and write a fake implementation (`StubAiServiceClient`) that returns believable canned responses instead of calling a real AI.
+
+This is a very common pattern, worth knowing by name: **programming to an interface**. Nothing in `SessionService` (the class that actually orchestrates a turn) knows or cares whether `AiServiceClient` is the stub or a real Python-backed implementation — it just calls `nextTurn()` and works with whatever comes back. When Phase 3 builds the real thing, only one small file changes (a new class implementing the same interface); `SessionService`, `SessionController`, and everything downstream stays untouched. This is *why* it's safe to build "the plumbing" before "the brain" exists — the seam between them is explicit and narrow.
+
+### The new pieces
+
+- **`aiservice/`** — `AiServiceClient` (the interface), `StubAiServiceClient` (the fake), `InterrogatorTurnResult` (the shape of a response — matches the real contract the Python Interrogator will eventually return, so nothing here needs to change later either).
+- **`session/SessionService.java`** — the actual orchestration: start a session (seed the 8 universal questions, ask the AI service for an opening question), and answer a turn (record the answer, ask the AI service what's next, save whatever facts/new questions came back, ask the next question — or conclude).
+- **`session/SessionController.java`** — the two HTTP endpoints (`POST /api/v1/sessions`, `POST /api/v1/sessions/{id}/answer`) that make this reachable at all.
+
+### A real bug the test caught (worth understanding, not just noting)
+
+Writing `SessionFlowIntegrationTest` immediately caught a genuine bug: the stub's example "new question" reused a slot key (`scale_expectation`) that was already one of the 8 seeded-at-start questions, so the database rejected it as a duplicate. This is exactly what integration tests are *for* — not proving the happy path works, but surfacing the seams where two pieces of code (seeding logic and stub logic, written separately) made incompatible assumptions about the same data. Fixed two ways: the stub now asks about a genuinely new topic, and `SessionService` itself now defensively ignores a "new slot" if that key already exists — because a *real* AI service could hit the same situation, not just this test's fake one.
+
+### A genuinely surprising Spring Boot 4 discovery
+
+While wiring up JSON handling for merging brief data, a piece of code that should have worked (`@Autowired ObjectMapper`) failed with "no such bean." The reason turned out to be significant: **Spring Boot 4 has quietly moved to a new, different JSON library internally, called Jackson 3** (its classes live under a new name, `tools.jackson`, instead of the classic `com.fasterxml.jackson` everyone's used for over a decade). Spring auto-configures an instance of the *new* one, which is a different Java type than the *old* one — so asking for the old type finds nothing, even though "a Jackson ObjectMapper" conceptually exists. The fix was to define our own bean explicitly (`JacksonConfig.java`), using the classic type — the right call for now since other libraries this project depends on (the API docs generator) haven't moved to Jackson 3 yet either.
+
+---
+
 ## What's next
 
-Phase 1 is functionally complete (repo, Spring Boot skeleton, full schema, Google login + JWT) — see `docs/phases/phase-1/` for the setup/verification checklist, one item of which needs your own Google Cloud credentials. Phase 2's memory layer (entities + `WorkingContextAssembler`) is built; next is a stubbed connection to where the Python AI service will eventually live, so the whole pipeline (create a session → get a question → answer it → see it persisted) can be exercised end to end even before Python exists.
+Phase 1 (repo, Spring Boot skeleton, full schema, Google login + JWT) and Phase 2 (memory layer + a provably-working session/turn pipeline, backed by a stand-in AI service) are both functionally complete. See `docs/phases/phase-1/` and `docs/phases/phase-2/` for their setup/verification checklists — Phase 1 has one item that needs your own Google Cloud credentials, everything else is automated and already verified. Phase 3 is next: the actual Python AI service, and swapping `StubAiServiceClient` for a real implementation.
