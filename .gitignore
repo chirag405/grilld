@@ -1,0 +1,38 @@
+# Java / Maven
+grilld-backend/target/
+grilld-backend/.mvn/wrapper/maven-wrapper.jar
+*.class
+*.jar
+!*/.mvn/wrapper/maven-wrapper.jar
+
+# Python
+grilld-ai-service/.venv/
+grilld-ai-service/__pycache__/
+**/__pycache__/
+*.pyc
+grilld-ai-service/.pytest_cache/
+grilld-ai-service/*.egg-info/
+grilld-ai-service/.langgraph_api/
+
+# Node / Next.js (grilld-frontend, added at Phase 9)
+grilld-frontend/node_modules/
+grilld-frontend/.next/
+grilld-frontend/out/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
