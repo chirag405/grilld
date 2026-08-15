@@ -5,9 +5,12 @@ import com.grilld.backend.aiservice.GenerationResult;
 import com.grilld.backend.brief.ProjectBrief;
 import com.grilld.backend.brief.ProjectBriefRepository;
 import com.grilld.backend.common.exception.ResourceNotFoundException;
+import com.grilld.backend.slot.Slot;
+import com.grilld.backend.slot.SlotRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -45,13 +48,16 @@ public class GenerationService {
     );
 
     private final ProjectBriefRepository briefRepository;
+    private final SlotRepository slotRepository;
     private final GenerationRunRepository generationRunRepository;
     private final AgentExecutionRepository agentExecutionRepository;
     private final AiServiceClient aiServiceClient;
 
-    public GenerationService(ProjectBriefRepository briefRepository, GenerationRunRepository generationRunRepository,
+    public GenerationService(ProjectBriefRepository briefRepository, SlotRepository slotRepository,
+                              GenerationRunRepository generationRunRepository,
                               AgentExecutionRepository agentExecutionRepository, AiServiceClient aiServiceClient) {
         this.briefRepository = briefRepository;
+        this.slotRepository = slotRepository;
         this.generationRunRepository = generationRunRepository;
         this.agentExecutionRepository = agentExecutionRepository;
         this.aiServiceClient = aiServiceClient;
@@ -75,8 +81,14 @@ public class GenerationService {
 
         GenerationRun run = generationRunRepository.save(new GenerationRun(brief.getId()));
 
+        List<String> unresolvedSlotDescriptions = slotRepository.findBySessionIdAndStatus(sessionId, Slot.Status.OPEN)
+                .stream()
+                .map(Slot::getDescription)
+                .toList();
+
         try {
-            GenerationResult result = aiServiceClient.generateBlueprint(run.getId(), brief.getBriefJson(), brief.getScaleTier());
+            GenerationResult result = aiServiceClient.generateBlueprint(
+                    run.getId(), brief.getBriefJson(), brief.getScaleTier(), unresolvedSlotDescriptions);
             persistAgentExecutions(run.getId(), result);
             run.markCompleted("Generated " + result.files().size() + " files across "
                     + AGENT_PRIMARY_OUTPUT.size() + " specialists.");

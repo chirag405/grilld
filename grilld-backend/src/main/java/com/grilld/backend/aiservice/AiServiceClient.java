@@ -2,6 +2,7 @@ package com.grilld.backend.aiservice;
 
 import com.grilld.backend.memory.WorkingContext;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -39,6 +40,10 @@ public interface AiServiceClient {
      * §3.2) against a finalized, scale-calibrated brief. runId doubles as
      * the LangGraph thread id, one thread per generation attempt - unlike
      * the Interrogator's one-thread-per-interview-session.
+     * unresolvedSlotDescriptions carries anything still OPEN when the
+     * session concluded (via the rubric gate's "never trap" fallback, or the
+     * user's force-conclude escape hatch, §7) - the Orchestrator writes these
+     * into ASSUMPTIONS.md prominently rather than silently dropping them.
      */
-    GenerationResult generateBlueprint(UUID runId, String briefJson, String scaleTier);
+    GenerationResult generateBlueprint(UUID runId, String briefJson, String scaleTier, List<String> unresolvedSlotDescriptions);
 }

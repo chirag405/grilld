@@ -15,16 +15,13 @@ SessionService.applyExtraction() in grilld-backend.
 
 from __future__ import annotations
 
-import os
-
 from langchain.chat_models import init_chat_model
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
 from grilld_ai_service.interrogator.schemas import InterrogatorTurnResult
 from grilld_ai_service.interrogator.vagueness import detect_vagueness
-
-DEFAULT_MODEL = os.getenv("GRILLD_AI_MODEL", "anthropic:claude-sonnet-4-6")
+from grilld_ai_service.model_tiers import model_for
 
 
 class InterrogatorState(TypedDict, total=False):
@@ -74,13 +71,26 @@ nothing to extract yet, you're generating the first question, not processing
 an answer.
 """
 
-    vagueness_instruction = ""
+    # detect_vagueness is a cheap, deterministic, guaranteed-catch pre-filter
+    # for a fixed list of common vague terms - not the ceiling on what counts
+    # as vague. It will never cover every vague phrasing ("seamless",
+    # "intuitive", "as needed", "some users", ...), so the model always gets
+    # a standing instruction to apply its own judgment too, on top of
+    # whatever the deterministic check already flagged.
     if vague_terms:
         vagueness_instruction = f"""
-VAGUENESS DETECTED in the last answer: {", ".join(vague_terms)}
+VAGUENESS DETECTED in the last answer (matched a known vague-term list): {", ".join(vague_terms)}
 Per interrogation-engine.md §4, do not accept this at face value. Your
 next_question MUST use technique=CONCRETIZATION and ask for a specific number
 or concrete example in place of the vague term.
+"""
+    else:
+        vagueness_instruction = """
+No vague terms matched the fixed known-term list, but use your own judgment too: if the last
+answer still leans on unmeasurable claims, marketing language, or hand-waving you weren't
+explicitly given a number or concrete example for ("seamless", "intuitive", "as needed", "some
+users", "cutting-edge", etc. - or anything else in that spirit), treat it the same as a detected
+vague term - use technique=CONCRETIZATION and ask for the specific number or example instead.
 """
 
     open_gaps = state.get("open_gaps") or []
@@ -128,7 +138,7 @@ RULES:
 
 
 async def generate_turn(state: InterrogatorState) -> dict:
-    model = init_chat_model(DEFAULT_MODEL)
+    model = init_chat_model(model_for("interrogator"))
     structured_model = model.with_structured_output(InterrogatorTurnResult)
     prompt = _build_prompt(state)
     result: InterrogatorTurnResult = await structured_model.ainvoke(prompt)

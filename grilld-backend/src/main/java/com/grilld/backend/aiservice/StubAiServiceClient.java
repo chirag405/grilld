@@ -88,7 +88,7 @@ public class StubAiServiceClient implements AiServiceClient {
     }
 
     @Override
-    public GenerationResult generateBlueprint(UUID runId, String briefJson, String scaleTier) {
+    public GenerationResult generateBlueprint(UUID runId, String briefJson, String scaleTier, List<String> unresolvedSlotDescriptions) {
         return new GenerationResult(Map.of("/docs/PROJECT_BRIEF.md", "stub: " + briefJson));
     }
 }

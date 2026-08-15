@@ -36,9 +36,6 @@ public class DiscoverySession {
     @Column(nullable = false)
     private Status status = Status.ACTIVE;
 
-    @Column(name = "scale_tier")
-    private String scaleTier; // T0-T3; set by the Scale Calibrator agent, Phase 5
-
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -57,6 +54,11 @@ public class DiscoverySession {
         this.updatedAt = Instant.now();
     }
 
+    public void markReadyForGeneration() {
+        this.status = Status.READY_FOR_GENERATION;
+        touch();
+    }
+
     public UUID getId() {
         return id;
     }
@@ -71,10 +73,6 @@ public class DiscoverySession {
 
     public Status getStatus() {
         return status;
-    }
-
-    public String getScaleTier() {
-        return scaleTier;
     }
 
     public Instant getCreatedAt() {

@@ -47,6 +47,11 @@ public class SessionController {
         return sessionService.calibrateScale(sessionId);
     }
 
+    @PostMapping("/{sessionId}/force-conclude")
+    public void forceConclude(@PathVariable UUID sessionId) {
+        sessionService.forceConclude(sessionId);
+    }
+
     @PutMapping("/{sessionId}/scale-tier")
     public void overrideScaleTier(@PathVariable UUID sessionId, @Valid @RequestBody OverrideScaleTierRequest request) {
         sessionService.overrideScaleTier(sessionId, request.tier());

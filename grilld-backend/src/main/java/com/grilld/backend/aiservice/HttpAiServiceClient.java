@@ -160,13 +160,24 @@ public class HttpAiServiceClient implements AiServiceClient {
     }
 
     @Override
-    public GenerationResult generateBlueprint(UUID runId, String briefJson, String scaleTier) {
+    public GenerationResult generateBlueprint(UUID runId, String briefJson, String scaleTier,
+                                               List<String> unresolvedSlotDescriptions) {
         ensureThreadExists(runId.toString());
 
-        String messageContent = "Here is the project brief (JSON):\n" + (briefJson == null ? "{}" : briefJson)
-                + "\n\nThe assigned scale tier is " + scaleTier + ". Begin.";
+        StringBuilder messageContent = new StringBuilder()
+                .append("Here is the project brief (JSON):\n").append(briefJson == null ? "{}" : briefJson)
+                .append("\n\nThe assigned scale tier is ").append(scaleTier).append(".");
+
+        if (unresolvedSlotDescriptions != null && !unresolvedSlotDescriptions.isEmpty()) {
+            messageContent.append("\n\nThe interview ended before these were resolved - write every one of them into "
+                    + "/docs/ASSUMPTIONS.md prominently, alongside PROJECT_BRIEF.md, before delegating to any "
+                    + "specialist:\n");
+            unresolvedSlotDescriptions.forEach(desc -> messageContent.append("- ").append(desc).append("\n"));
+        }
+        messageContent.append("\nBegin.");
+
         Map<String, Object> input = Map.of(
-                "messages", List.of(Map.of("role", "user", "content", messageContent))
+                "messages", List.of(Map.of("role", "user", "content", messageContent.toString()))
         );
         Map<String, Object> requestBody = Map.of("assistant_id", "orchestrator", "input", input);
 

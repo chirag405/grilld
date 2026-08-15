@@ -9,16 +9,13 @@ Rubric Agent, not a subagent buried inside one big Orchestrator run.
 
 from __future__ import annotations
 
-import os
-
 from langchain.chat_models import init_chat_model
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
+from grilld_ai_service.model_tiers import model_for
 from grilld_ai_service.scale_calibrator.prompt import SCALE_CALIBRATION_PROMPT
 from grilld_ai_service.scale_calibrator.schemas import ScaleCalibrationResult
-
-DEFAULT_MODEL = os.getenv("GRILLD_AI_MODEL", "anthropic:claude-sonnet-4-6")
 
 
 class ScaleCalibratorState(TypedDict, total=False):
@@ -31,7 +28,7 @@ class ScaleCalibratorState(TypedDict, total=False):
 
 
 async def calibrate(state: ScaleCalibratorState) -> dict:
-    model = init_chat_model(DEFAULT_MODEL)
+    model = init_chat_model(model_for("scale_calibrator"))
     structured_model = model.with_structured_output(ScaleCalibrationResult)
     prompt = SCALE_CALIBRATION_PROMPT.format(brief_json=state.get("brief_json") or "{}")
     result: ScaleCalibrationResult = await structured_model.ainvoke(prompt)

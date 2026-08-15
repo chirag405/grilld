@@ -11,17 +11,14 @@ prompt/parse loop - it's exactly the "custom rubric in, structured
 
 from __future__ import annotations
 
-import os
-
 from langgraph.graph import END, START, StateGraph
 from openevals.llm import create_async_llm_as_judge
 from pydantic import BaseModel
 from typing_extensions import TypedDict
 
+from grilld_ai_service.model_tiers import model_for
 from grilld_ai_service.rubric.prompt import RUBRIC_PROMPT
 from grilld_ai_service.rubric.schemas import DimensionResult
-
-DEFAULT_MODEL = os.getenv("GRILLD_AI_MODEL", "anthropic:claude-sonnet-4-6")
 
 
 class SlotSummary(TypedDict):
@@ -81,7 +78,7 @@ def _compute_verdict(dimensions: list[dict]) -> tuple[str, list[str]]:
 async def evaluate(state: RubricState) -> dict:
     judge = create_async_llm_as_judge(
         prompt=RUBRIC_PROMPT,
-        model=DEFAULT_MODEL,
+        model=model_for("rubric"),
         output_schema=JudgeOutput,
     )
     result = await judge(

@@ -105,6 +105,21 @@ public class SessionService {
     }
 
     /**
+     * The escape hatch (product-and-architecture.md §7): "user can force-accept
+     * after N rounds ('just generate it')." Unconditional - no rubric check,
+     * no minimum brief completeness required. Never trap the user in an
+     * interview loop; everything still OPEN gets surfaced to the Orchestrator
+     * as unresolved (see GenerationService/AGENT_PRIMARY_OUTPUT's
+     * ASSUMPTIONS.md wiring) rather than silently dropped.
+     */
+    @Transactional
+    public void forceConclude(UUID sessionId) {
+        DiscoverySession session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("No session " + sessionId));
+        session.markReadyForGeneration();
+    }
+
+    /**
      * The Interrogator thinks it's done - but per product-and-architecture.md
      * §7, that's only a proposal. The Rubric Agent is the actual adversarial
      * gate: on "accept" the session really concludes; on "probe_further" its
@@ -116,7 +131,7 @@ public class SessionService {
         persistRubricEvaluation(sessionId, lastAnsweredTurn.getTurnNumber(), rubric);
 
         if (rubric.accepted()) {
-            session.touch();
+            session.markReadyForGeneration();
             return TurnAnswerResult.markConcluded();
         }
 
@@ -129,7 +144,7 @@ public class SessionService {
             // explicit rejection, accept what we have rather than looping.
             // Everything unresolved is already on record via the RubricEvaluation
             // just persisted above.
-            session.touch();
+            session.markReadyForGeneration();
             return TurnAnswerResult.markConcluded();
         }
 
