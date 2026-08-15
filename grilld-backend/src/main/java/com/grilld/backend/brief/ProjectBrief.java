@@ -47,6 +47,15 @@ public class ProjectBrief {
     @Column(name = "rubric_scores")
     private String rubricScores;
 
+    @Column(name = "scale_tier")
+    private String scaleTier;
+
+    @Column(name = "scale_tier_reasoning")
+    private String scaleTierReasoning;
+
+    @Column(name = "scale_tier_overridden", nullable = false)
+    private boolean scaleTierOverridden = false;
+
     @Version
     @Column(nullable = false)
     private int version;
@@ -69,6 +78,17 @@ public class ProjectBrief {
         this.compactedSummary = compactedSummary;
     }
 
+    public void applyScaleCalibration(String tier, String reasoning) {
+        this.scaleTier = tier;
+        this.scaleTierReasoning = reasoning;
+        this.scaleTierOverridden = false;
+    }
+
+    public void overrideScaleTier(String tier) {
+        this.scaleTier = tier;
+        this.scaleTierOverridden = true;
+    }
+
     public UUID getId() {
         return id;
     }
@@ -87,5 +107,17 @@ public class ProjectBrief {
 
     public int getVersion() {
         return version;
+    }
+
+    public String getScaleTier() {
+        return scaleTier;
+    }
+
+    public String getScaleTierReasoning() {
+        return scaleTierReasoning;
+    }
+
+    public boolean isScaleTierOverridden() {
+        return scaleTierOverridden;
     }
 }

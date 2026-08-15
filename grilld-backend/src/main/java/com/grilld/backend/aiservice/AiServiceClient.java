@@ -23,4 +23,12 @@ public interface AiServiceClient {
      * check on that signal, not a per-turn cost.
      */
     RubricResult evaluateRubric(RubricContext context);
+
+    /**
+     * Assigns the hard complexity ceiling for a concluded interview
+     * (docs/product-and-architecture.md §4). Called once, right after the
+     * Rubric Agent accepts - before any generation run starts, since the
+     * tier is shown to the user for override first.
+     */
+    ScaleCalibrationResult calibrateScale(String briefJson);
 }

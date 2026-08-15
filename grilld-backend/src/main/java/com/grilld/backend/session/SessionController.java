@@ -1,10 +1,12 @@
 package com.grilld.backend.session;
 
+import com.grilld.backend.aiservice.ScaleCalibrationResult;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -38,5 +40,15 @@ public class SessionController {
     public SessionService.TurnAnswerResult answer(@PathVariable UUID sessionId,
                                                     @Valid @RequestBody SubmitAnswerRequest request) {
         return sessionService.submitAnswer(sessionId, request.answerText());
+    }
+
+    @PostMapping("/{sessionId}/scale-tier")
+    public ScaleCalibrationResult calibrateScale(@PathVariable UUID sessionId) {
+        return sessionService.calibrateScale(sessionId);
+    }
+
+    @PutMapping("/{sessionId}/scale-tier")
+    public void overrideScaleTier(@PathVariable UUID sessionId, @Valid @RequestBody OverrideScaleTierRequest request) {
+        sessionService.overrideScaleTier(sessionId, request.tier());
     }
 }

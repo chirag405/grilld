@@ -2,6 +2,8 @@
 
 You don't know Java/Spring Boot yet. This doc is updated every time something new gets added to the project — what got built, why, and how it connects to everything else. Read it top to bottom for the story so far, or jump to a section when you want to understand a specific file.
 
+**This file covers the Java/Spring Boot side (`grilld-backend/`).** Starting Phase 5, the Python side (`grilld-ai-service/` - LangGraph, Deep Agents, the specialist agents) has its own running log at `grilld-ai-service/LEARNING.md`, which also carries a summary of the earlier Python work from Phases 3-4 so it reads as a complete story on its own.
+
 ---
 
 ## The big picture first
@@ -329,3 +331,13 @@ Driving a real multi-turn interview by hand (not through the test suite) surface
 ## What's next
 
 Phases 1–4 are functionally complete and genuinely verified — real Google login, a real interview pipeline with a real dynamically-generated interviewer, and a Rubric Agent that can actually overrule it. See each phase's `docs/phases/phase-N/` for the full checklist, including what's proven versus honestly deferred (Phase 4's gap: a full live run reaching the rubric gate itself wasn't re-confirmed after a late code fix, due to browser-automation flakiness rather than any known code issue - the gate's logic is proven by `RubricGateTest` regardless). Phase 5 is next: the specialist agent roster (Tech Architect, Infra Agent, Diagram, Roadmap, Skills Curator, Agent-File Writer, Consistency Auditor) that actually generates the blueprint once an interview concludes.
+
+---
+
+## Phase 5 (in progress): the specialist roster
+
+**From this phase on, `grilld-ai-service/LEARNING.md` is where the Python-side story (LangGraph, Deep Agents, the specialist agents) lives** - this file was getting hard to navigate once both sides had real depth. This file (the root `LEARNING.md`) stays focused on the Java/Spring Boot side.
+
+The roster (`product-and-architecture.md` §3.2) turned out to be 11 agents, not the "7 agents" shorthand from earlier planning: Scale Calibrator, Market Analyst, Competition Analyst, Strategy Agent, Tech Architect, Infra Agent, Diagram Agent, Roadmap Agent, Skills Curator, Agent-File Writer, Consistency Auditor.
+
+**What changed on the Spring side so far:** a new migration (`V2__scale_tier.sql`) adds `scale_tier`/`scale_tier_reasoning`/`scale_tier_overridden` to `project_briefs` - the Scale Calibrator's tier needs to be stored and shown to the user for override *before* the full generation run starts, not buried inside it (see the Python-side log for why Scale Calibrator is its own small graph rather than a subagent). Two new endpoints: `POST /api/v1/sessions/{id}/scale-tier` runs the real calibration, `PUT /api/v1/sessions/{id}/scale-tier` handles the user's override - which keeps the original AI-generated reasoning text but flips an `overridden` flag, so the UI can later show "you changed this from what we suggested" instead of silently losing that context.

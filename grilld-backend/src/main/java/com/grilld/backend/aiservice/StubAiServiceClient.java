@@ -79,4 +79,9 @@ public class StubAiServiceClient implements AiServiceClient {
                 new RubricResult.DimensionResult("problem_clarity", "PASS", "stub: always passes"));
         return new RubricResult(dimensions, "accept", List.of());
     }
+
+    @Override
+    public ScaleCalibrationResult calibrateScale(String briefJson) {
+        return new ScaleCalibrationResult("T1", "stub: always T1", List.of("stub"));
+    }
 }

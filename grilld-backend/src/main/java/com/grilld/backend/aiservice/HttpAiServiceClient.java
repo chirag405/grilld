@@ -130,6 +130,33 @@ public class HttpAiServiceClient implements AiServiceClient {
         return new RubricResult(dimensions, verdict, openGaps == null ? List.of() : openGaps);
     }
 
+    @Override
+    public ScaleCalibrationResult calibrateScale(String briefJson) {
+        Map<String, Object> input = Map.of("brief_json", briefJson == null ? "{}" : briefJson);
+        Map<String, Object> requestBody = Map.of("assistant_id", "scale_calibrator", "input", input);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> finalState = restClient.post()
+                .uri("/runs/wait")
+                .body(requestBody)
+                .retrieve()
+                .body(Map.class);
+
+        return parseScaleCalibrationResult(finalState);
+    }
+
+    @SuppressWarnings("unchecked")
+    private ScaleCalibrationResult parseScaleCalibrationResult(Map<String, Object> finalState) {
+        Map<String, Object> calibrationResult = (Map<String, Object>) finalState.get("calibration_result");
+        if (calibrationResult == null) {
+            throw new IllegalStateException("Scale Calibrator returned no calibration_result: " + finalState);
+        }
+        return new ScaleCalibrationResult(
+                (String) calibrationResult.get("tier"),
+                (String) calibrationResult.get("reasoning"),
+                (List<String>) calibrationResult.get("signals"));
+    }
+
     private void ensureThreadExists(String threadId) {
         try {
             restClient.post()

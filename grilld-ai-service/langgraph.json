@@ -4,7 +4,8 @@
   "graphs": {
     "orchestrator": "grilld_ai_service.app:get_graph",
     "interrogator": "grilld_ai_service.interrogator.graph:graph",
-    "rubric": "grilld_ai_service.rubric.graph:graph"
+    "rubric": "grilld_ai_service.rubric.graph:graph",
+    "scale_calibrator": "grilld_ai_service.scale_calibrator.graph:graph"
   },
   "env": ".env"
 }

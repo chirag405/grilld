@@ -6,6 +6,7 @@ import com.grilld.backend.aiservice.AiServiceClient;
 import com.grilld.backend.aiservice.InterrogatorTurnResult;
 import com.grilld.backend.aiservice.RubricContext;
 import com.grilld.backend.aiservice.RubricResult;
+import com.grilld.backend.aiservice.ScaleCalibrationResult;
 import com.grilld.backend.brief.ProjectBrief;
 import com.grilld.backend.brief.ProjectBriefRepository;
 import com.grilld.backend.common.exception.ResourceNotFoundException;
@@ -135,6 +136,24 @@ public class SessionService {
         Turn nextTurn = createTurnFromQuestion(sessionId, lastAnsweredTurn.getTurnNumber() + 1, retryResult);
         session.touch();
         return TurnAnswerResult.nextQuestion(nextTurn.getQuestionText());
+    }
+
+    @Transactional
+    public ScaleCalibrationResult calibrateScale(UUID sessionId) {
+        ProjectBrief brief = briefRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("No brief for session " + sessionId));
+        ScaleCalibrationResult result = aiServiceClient.calibrateScale(brief.getBriefJson());
+        brief.applyScaleCalibration(result.tier(), result.reasoning());
+        briefRepository.save(brief);
+        return result;
+    }
+
+    @Transactional
+    public void overrideScaleTier(UUID sessionId, String tier) {
+        ProjectBrief brief = briefRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("No brief for session " + sessionId));
+        brief.overrideScaleTier(tier);
+        briefRepository.save(brief);
     }
 
     private RubricResult evaluateRubric(UUID sessionId) {
