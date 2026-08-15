@@ -291,6 +291,41 @@ This worked on the first real attempt after fixing one bug: the LangGraph server
 
 ---
 
+## Phase 4: the real Interrogator, and a Rubric Agent that argues back
+
+This phase replaced the last two pieces of placeholder AI logic with the real thing: a genuinely dynamic interviewer, and an adversarial quality gate that gets to overrule it.
+
+### The Interrogator: two nodes, no script
+
+`grilld_ai_service/interrogator/graph.py` is a small `StateGraph` (not a Deep Agent - see `decisions-and-technical-architecture.md` §11.1 for why: it needs precise custom control flow, which middleware doesn't give you) with exactly two nodes:
+
+1. **`check_vagueness`** — a plain Python function, no LLM call. It regex-matches the last answer against a fixed list of vague terms ("fast", "a lot", "eventually", "scale well", etc.) using word-boundary matching so it doesn't false-positive on substrings like "fasten". Cheap and deterministic on purpose - no reason to spend an LLM call deciding whether "it should be fast" is vague.
+2. **`generate_turn`** — the actual Claude call, using `.with_structured_output(InterrogatorTurnResult)` so the response comes back as validated Pydantic data (extracted facts, newly-spawned slots, waived slots, and the next question), never free text to parse by hand.
+
+The prompt assembled in `_build_prompt()` is built fresh every call from whatever Spring sends (the compacted brief, ranked open slots, the last few turns) - there's no conversation history living inside the Python service itself. That's deliberate: it's what makes turn 40 cost the same tokens as turn 4, instead of the prompt growing forever.
+
+### A judge that disagreed with itself — and what that taught about LLM-as-judge design
+
+The Rubric Agent (`grilld_ai_service/rubric/graph.py`) uses LangChain's `openevals` library to score a brief against six dimensions (problem clarity, scope boundedness, scale concreteness, technical grounding, success definition, risk awareness) as `FAIL`/`BORDERLINE`/`PASS` - a categorical scale instead of 1-5, because `decisions-and-technical-architecture.md` §11.4 already flagged that fine-grained numeric LLM-as-judge scores are unreliable.
+
+The first version also asked the same LLM call to produce an overall `verdict` ("accept" or "probe_further") alongside the six scores. Testing it against a genuinely strong brief fixture (real numbers, named risks, an explicit scope-exclusion list) turned up something worth remembering: the model gave the brief **zero FAILs and exactly one BORDERLINE**, which by the stated rule ("accept if zero FAILs and at most one BORDERLINE") should accept - but the model's own free-text verdict field said `probe_further` anyway. It didn't consistently apply its own rule to its own scores.
+
+The fix wasn't a better prompt - it was to stop asking. The judge's `output_schema` now only asks for the six dimension scores; a plain Python function, `_compute_verdict()`, derives the verdict deterministically from those scores afterward (and even tightened the rule while at it: *any* `BORDERLINE` now blocks acceptance, not just more than one). This is a small but genuinely useful pattern: **when an LLM call's own structured output already contains everything needed to compute a downstream decision, compute it in code — don't ask the same call to also make the decision "holistically."** The two can disagree, and when they do, the free-form one is usually the less trustworthy of the two.
+
+### Two different ways to call the same LangGraph server
+
+Phase 3 only ever used *threaded* runs (`POST /threads/{id}/runs/wait` - the interview needs a per-session identity even though nothing is stored in it). The Rubric Agent doesn't need a thread at all - it's one self-contained judgment call with no session concept - so `HttpAiServiceClient.evaluateRubric()` uses LangGraph's other REST pattern instead: `POST /runs/wait` with no thread id, a genuinely stateless run. Worth knowing both exist: use a thread when a call is conceptually part of an ongoing session (even a stateless one, like the Interrogator), skip it entirely when a call has no session concept at all.
+
+### The gate: who actually decides an interview is over
+
+Before this phase, `readyToConclude=true` from the Interrogator just... ended the session. Now `SessionService.resolveConclusionAttempt()` treats that as a proposal: it assembles every slot (not just the open ones the Interrogator sees - the rubric needs to see what's *filled* too) and calls the Rubric Agent. Accept really concludes; `probe_further` hands the rubric's `open_gaps` back into a fresh `WorkingContext` and asks the Interrogator for exactly one more, targeted question - with an explicit instruction not to try concluding again. If it still can't manage a real follow-up, the session concludes anyway rather than looping forever (`interrogation-engine.md` §7's "never trap the user" guardrail, now actually enforced in code instead of just documented).
+
+### A bug the mocked tests couldn't have caught
+
+Driving a real multi-turn interview by hand (not through the test suite) surfaced something the scripted `RubricGateTest` mocks never would: the real Interrogator occasionally comes back with `next_question: null` while also saying `ready_to_conclude: false` - a self-contradictory response the structured-output contract doesn't actually forbid at the type level. That crashed with a raw `NullPointerException`. The fix treats a null question the same as a conclude attempt (let the rubric gate sort it out) rather than trusting the AI side's `readyToConclude` flag as the only signal that matters. The lesson: a mocked test suite proves your own code's logic is correct for the inputs you thought to script - it can't catch a real model producing an input shape you didn't anticipate. Both kinds of testing earned their place this phase; neither would have been enough alone.
+
+---
+
 ## What's next
 
-Phases 1–3 are functionally complete and genuinely verified — real Google login, a real interview/turn pipeline, and now Spring actually calling a real (if still simple) Python AI service and getting real Claude-generated responses back. See each phase's `docs/phases/phase-N/` for the full checklist, including what's proven versus honestly deferred. Phase 4 is next: the real Interrogator (a LangGraph subgraph with the dynamic slot-graph logic from `docs/interrogation-engine.md`) and the Rubric Agent, replacing the placeholder logic in both `StubAiServiceClient`/`HttpAiServiceClient` and the trivial `ping` subagent with the real thing.
+Phases 1–4 are functionally complete and genuinely verified — real Google login, a real interview pipeline with a real dynamically-generated interviewer, and a Rubric Agent that can actually overrule it. See each phase's `docs/phases/phase-N/` for the full checklist, including what's proven versus honestly deferred (Phase 4's gap: a full live run reaching the rubric gate itself wasn't re-confirmed after a late code fix, due to browser-automation flakiness rather than any known code issue - the gate's logic is proven by `RubricGateTest` regardless). Phase 5 is next: the specialist agent roster (Tech Architect, Infra Agent, Diagram, Roadmap, Skills Curator, Agent-File Writer, Consistency Auditor) that actually generates the blueprint once an interview concludes.
