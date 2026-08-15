@@ -1,30 +1,30 @@
 # Phase 1 — Testing (the gate for Phase 2)
 
-Per `phased-delivery`: Phase 2 doesn't start until this checklist passes. Items marked **[done this session]** were already verified while building; the remaining items need your Google OAuth credentials (see `SETUP.md`) and a final look, since that part genuinely can't be verified without them.
+Per `phased-delivery`: Phase 2 doesn't start until this checklist passes. **All items verified this session, including the real Google login end to end.**
 
 ## Automated
 
-- [x] **[done this session]** `./mvnw test` passes — Testcontainers-backed integration test boots the full app against a real (temporary) Postgres, confirms Flyway applies cleanly, and confirms the exact expected set of 16 tables exists (`GrilldBackendApplicationTests.flywayMigrationCreatesFullSchema`).
-- [x] **[done this session]** `OAuth2LoginSuccessHandlerTest` — unit test (Mockito, no DB) proving the post-login handler correctly extracts `googleId`/`email` from Google's `OAuth2User`, calls `UserService`/`TokenService` correctly, and writes the right JSON response. This covers the handler's own logic; it does not (and cannot) cover the actual OAuth2 redirect handshake with Google itself — that's the manual item below.
+- [x] `./mvnw test` passes — Testcontainers-backed integration test boots the full app against a real (temporary) Postgres, confirms Flyway applies cleanly, and confirms the exact expected set of 16 tables exists (`GrilldBackendApplicationTests.flywayMigrationCreatesFullSchema`).
+- [x] `OAuth2LoginSuccessHandlerTest` — unit test (Mockito, no DB) proving the post-login handler correctly extracts `googleId`/`email` from Google's `OAuth2User`, calls `UserService`/`TokenService` correctly, and writes the right JSON response.
 
-## Manual — already verified this session
+## Manual
 
-- [x] **[done this session]** `docker compose up -d postgres` starts cleanly and reports healthy.
-- [x] **[done this session]** `./mvnw spring-boot:run` (with `SPRING_PROFILES_ACTIVE=local`) boots without error against the Dockerized Postgres.
-- [x] **[done this session]** `GET /actuator/health` → `200`, reports the database connection as `UP`.
-- [x] **[done this session]** `GET /api/v1/me` with no `Authorization` header → `401`.
-- [x] **[done this session]** `GET /swagger-ui.html` → reachable without auth (redirects to the actual docs page).
+- [x] `docker compose up -d postgres` starts cleanly and reports healthy.
+- [x] `./mvnw spring-boot:run` (with `SPRING_PROFILES_ACTIVE=local`) boots without error against the Dockerized Postgres.
+- [x] `GET /actuator/health` → `200`, reports the database connection as `UP`.
+- [x] `GET /api/v1/me` with no `Authorization` header → `401`.
+- [x] `GET /swagger-ui.html` → reachable without auth (redirects to the actual docs page).
+- [x] **Real Google login, driven end to end in a browser with real credentials:**
+  - Visited `http://localhost:8080/oauth2/authorization/google` → redirected to a genuine Google account chooser showing "to continue to grilld"
+  - Selected an account, Google's consent screen correctly showed only what the app actually requests (name/profile picture, email)
+  - Redirected back to `/login/oauth2/code/google` → `{"token": "eyJ..."}` — a real RS256-signed JWT
+  - `GET /api/v1/me` with that token → `200`, correct `email`, `plan: FREE`, `creditsBalance: 60`
+  - Logged in a **second time** with the same account → new token, but the **same `sub` claim** (same user id) — confirmed via `SELECT count(*) FROM users` staying at exactly 1 row. `UserService.findOrCreateFromGoogle` finds, not duplicates.
 
-## Manual — needs your Google OAuth credentials (see SETUP.md)
+## A real bug this surfaced
 
-- [ ] Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, start the app.
-- [ ] Visit `http://localhost:8080/oauth2/authorization/google` in a browser.
-- [ ] Confirm it redirects to a real Google login page.
-- [ ] Log in with your own Google account (added as a test user on the OAuth consent screen).
-- [ ] Confirm you're redirected back and see `{"token": "eyJ..."}` in the response.
-- [ ] Copy that token and confirm `GET /api/v1/me` with `Authorization: Bearer <token>` now returns `200` with your user's `email`, `plan` (`FREE`), and `creditsBalance` (`60`).
-- [ ] Log in a second time with the same account; confirm no duplicate user row is created (same `id` comes back both times) — this proves `UserService.findOrCreateFromGoogle` is actually finding, not just creating.
+`server.max-http-header-size` (used in `application-local.properties`) has been a no-op since Spring Boot 3.0 — deprecated in favor of `server.max-http-request-header-size`. It silently did nothing, and a real browser session (accumulated cookies across many dev-server restarts this session) tripped Tomcat's 8KB default, failing every browser-driven request with `HTTP 400 — Request header is too large` before it ever reached app code. curl requests worked fine throughout (much smaller headers), which is what made this a browser-specific, not app-logic, problem. Fixed by using the correct property name.
 
 ## Sign-off
 
-Phase 1 is done once every box above is checked. The last group needs you specifically, since it's the one thing that requires a real external Google account — everything else is either automated or was already run and confirmed working this session.
+**Phase 1 is fully done.** Every item is verified, including the one that needed a real external Google account.

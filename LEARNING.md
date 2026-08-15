@@ -240,6 +240,14 @@ While wiring up JSON handling for merging brief data, a piece of code that shoul
 
 ---
 
+## The real Google login, end to end — and a genuinely confusing bug along the way
+
+With real Google OAuth credentials in hand, the whole login flow got driven through an actual browser: Google's real account chooser (correctly showing "to continue to grilld," proving the app's registered correctly), a real consent screen, a redirect back with a real signed JWT, and `/api/v1/me` returning the right data. Logging in twice with the same account produced two different tokens but the *same* user id both times — proof `UserService.findOrCreateFromGoogle` is finding an existing row, not quietly creating a second one every login.
+
+Getting there hit a real, worth-understanding bug first: every browser request to the app failed with `HTTP 400 — Request header is too large`, even though the exact same endpoint worked fine when called with `curl`. The difference was cookies — a real browser sends everything it's accumulated for a site, and across many dev-server restarts this session, that had grown past Tomcat's default 8KB header limit; `curl` sends almost none, so it never hit the wall. The fix looked obvious (`server.max-http-header-size`, a real Spring Boot property) but did *nothing* — because that exact property name was quietly deprecated back in Spring Boot 3.0 in favor of `server.max-http-request-header-size`, and the old name is now silently ignored rather than erroring. This is a good example of a broader lesson: when a fix that should obviously work doesn't, and there's no error message telling you why, suspect that the thing you configured and the thing actually being read aren't the same name anymore — frameworks rename things across major versions more often than tutorials get updated.
+
+---
+
 ## What's next
 
-Phase 1 (repo, Spring Boot skeleton, full schema, Google login + JWT) and Phase 2 (memory layer + a provably-working session/turn pipeline, backed by a stand-in AI service) are both functionally complete. See `docs/phases/phase-1/` and `docs/phases/phase-2/` for their setup/verification checklists — Phase 1 has one item that needs your own Google Cloud credentials, everything else is automated and already verified. Phase 3 is next: the actual Python AI service, and swapping `StubAiServiceClient` for a real implementation.
+Phase 1 (repo, Spring Boot skeleton, full schema, Google login + JWT) and Phase 2 (memory layer + a provably-working session/turn pipeline, backed by a stand-in AI service) are both **fully verified**, including a real end-to-end Google login — see `docs/phases/phase-1/` and `docs/phases/phase-2/` for the complete, all-checked verification checklists. Phase 3 is next: the actual Python AI service, and swapping `StubAiServiceClient` for a real implementation.
