@@ -76,12 +76,16 @@ public class Turn {
     protected Turn() {
     }
 
-    public Turn(UUID sessionId, int turnNumber, String questionText, String answerText, String inputMode) {
+    public Turn(UUID sessionId, int turnNumber, String questionText, List<String> targetsSlots, String inputMode) {
         this.sessionId = sessionId;
         this.turnNumber = turnNumber;
         this.questionText = questionText;
-        this.answerText = answerText;
+        this.targetsSlots = targetsSlots;
         this.inputMode = inputMode;
+    }
+
+    public void recordAnswer(String answerText) {
+        this.answerText = answerText;
     }
 
     public void applyExtraction(String factsExtractedJson, List<String> slotsSpawned, List<String> slotsWaived,

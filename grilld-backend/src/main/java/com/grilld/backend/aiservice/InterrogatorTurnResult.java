@@ -1,0 +1,37 @@
+package com.grilld.backend.aiservice;
+
+import java.util.List;
+
+/**
+ * Mirrors the Interrogator's structured-output contract exactly
+ * (docs/interrogation-engine.md §3's per-turn loop, step 2). This is the
+ * shape returned by whatever answers a turn - a stub today (StubAiServiceClient),
+ * the real Python service via the LangGraph server API from Phase 3 on
+ * (docs/decisions-and-technical-architecture.md §11.3). Nothing on the Spring
+ * side should need to change when the stub is swapped for the real thing.
+ */
+public record InterrogatorTurnResult(
+        List<ExtractedFact> extractedFacts,
+        List<NewSlot> newSlots,
+        List<WaivedSlot> waivedSlots,
+        NextQuestion nextQuestion, // null when readyToConclude is true
+        boolean readyToConclude
+) {
+    public record ExtractedFact(String slotKey, String value, double confidence) {
+    }
+
+    public record NewSlot(String key, String description, String origin, int importance, String parentSlotKey) {
+    }
+
+    public record WaivedSlot(String key, String reason) {
+    }
+
+    public record NextQuestion(
+            String text,
+            List<String> targetsSlots,
+            String technique,
+            String inputMode,
+            String whyAsking
+    ) {
+    }
+}
