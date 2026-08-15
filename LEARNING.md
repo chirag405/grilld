@@ -147,6 +147,48 @@ This matters because it's a genuinely different kind of test than "trust me, I r
 
 ---
 
+## Auth: logging in with Google, and how the app recognizes you afterward
+
+This is the last piece of Phase 1. Two different things are happening, and it's worth keeping them mentally separate:
+
+1. **Proving who you are** — happens once, when you log in, via Google.
+2. **Proving it on every later request** — happens on every single API call after that, via a token, *without* asking Google again.
+
+### The two new packages
+
+- **`user/`** — `User.java` is the entity (one row = one user). `UserRepository.java` is the Spring Data interface for reading/writing that table. `UserService.java` holds the one real piece of logic so far: "log in with this Google account → find the matching user, or create one if this is their first time." `MeController.java` + `UserResponse.java` are the first real API endpoint: `GET /api/v1/me`, which returns your own account info — but *only* if you're logged in.
+
+- **`auth/`** — everything about *how* login and tokens work, kept separate from the `User` data itself:
+  - **`SecurityConfig.java`** — the single file that decides, for every incoming request, "does this need login at all, and if so, which method proves it." `/actuator/health`, the API docs, and the login URLs are left open (`permitAll()`); everything else requires a valid token.
+  - **`JwtConfig.java`** — generates a cryptographic keypair (RSA) used to *sign* tokens. Signing means: nobody can forge a valid token without this private key, and anyone holding the matching public key can verify a token is genuine without being able to create fake ones themselves.
+  - **`TokenService.java`** — turns a `User` into an actual token string (a **JWT** — JSON Web Token. It's a compact, signed, self-contained bundle of claims like "this is user X, issued at time Y, expires at time Z" that the client presents on every request afterward, instead of a database-backed session).
+  - **`OAuth2LoginSuccessHandler.java`** — the bridge between the two halves. Runs exactly once, right when Google confirms your identity: looks up/creates your `User` row, mints a token via `TokenService`, and sends it back.
+
+### The actual flow
+
+```
+1. Browser visits /oauth2/authorization/google
+2. Spring Security redirects to Google's real login page
+3. You log in on Google's site (we never see your password - Google handles it entirely)
+4. Google redirects back to our app with proof of who you are
+5. OAuth2LoginSuccessHandler runs: find-or-create the User, issue a JWT
+6. You get back: {"token": "eyJhbGc..."}
+7. Every API call after this includes: Authorization: Bearer eyJhbGc...
+8. SecurityConfig checks that token's signature against our public key on every request
+```
+
+Steps 1–6 happen once per login. Step 7–8 happen on literally every API call, and *don't* need to talk to Google again — that's the entire point of a self-issued token instead of asking Google to vouch for you every single time.
+
+### Why "OAuth2" and "JWT" are two different things, not one
+
+It's easy to conflate these since they show up together constantly. **OAuth2** is the *login handshake protocol* — the back-and-forth redirect dance in steps 1–4 above, which could end with Google, GitHub, or any other provider. **JWT** is just a *token format* — a way of packaging "here's who this is and when it expires" that can be verified without a database lookup. We use OAuth2 to talk to Google once, and JWT for everything our own app hands out afterward. You could have either one without the other.
+
+### A known, deliberate gap
+
+`JwtConfig` generates a fresh signing key every time the app starts, instead of loading a saved one. That means every time the app restarts, every previously issued token stops working (everyone has to log in again). This is fine for a project with no real users yet, and called out explicitly rather than silently shipped — see the comment at the top of `JwtConfig.java`.
+
+---
+
 ## What's next
 
-Continuing into auth (Google login + JWT tokens) now, then Phase 2 (the "memory layer" — how the app remembers an in-progress interview). Both will get their own sections appended below as they're built.
+Phase 1 is functionally complete (repo, Spring Boot skeleton, full schema, Google login + JWT). See `docs/phases/phase-1/` for the setup and verification checklist — the Google login flow specifically needs you to create real credentials in Google Cloud Console, which is not something that can be done from inside the code. Phase 2 (the "memory layer" — how the app remembers an in-progress interview between turns) starts next; it'll get its own section here as it's built.
