@@ -1,0 +1,8 @@
+{
+  "$schema": "https://langgra.ph/schema.json",
+  "dependencies": ["."],
+  "graphs": {
+    "orchestrator": "grilld_ai_service.app:get_graph"
+  },
+  "env": ".env"
+}
