@@ -102,6 +102,14 @@ public class Slot {
         return slotKey;
     }
 
+    public String getDescription() {
+        return description;
+    }
+
+    public Origin getOrigin() {
+        return origin;
+    }
+
     public Status getStatus() {
         return status;
     }
@@ -116,6 +124,14 @@ public class Slot {
 
     public Double getConfidence() {
         return confidence;
+    }
+
+    public String getParentSlotKey() {
+        return parentSlotKey;
+    }
+
+    public List<String> getUnlocks() {
+        return unlocks;
     }
 
     public enum Origin {

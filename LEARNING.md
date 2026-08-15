@@ -189,6 +189,35 @@ It's easy to conflate these since they show up together constantly. **OAuth2** i
 
 ---
 
+## Phase 2: the memory layer
+
+Phase 1 built the platform (auth, schema). Phase 2 is about *remembering an interview between turns* — the actual thing that makes Grilld's interrogation different from a normal chatbot, per `docs/product-and-architecture.md` §1: state lives in Postgres, never in a growing conversation.
+
+### New packages
+
+- **`session/`** — `DiscoverySession` (one interrogation), `Turn` (one question/answer exchange), `ExpertiseProfile` (not populated yet — that's Phase 4's job).
+- **`slot/`** — `Slot` (one atomic fact the interview needs), `SlotWaive` (a record of a slot being skipped and why), `RubricEvaluation` (not populated yet — also Phase 4).
+- **`brief/`** — `ProjectBrief`, the single canonical "what we know about this project so far" record.
+- **`memory/`** — the new part this section is really about.
+
+### Why some JSON/array columns aren't Java classes
+
+A few entity fields (`Turn.factsExtracted`, `Slot.unlocks`, `ProjectBrief.briefJson`) are stored as raw JSON text or a plain list, rather than as a proper nested Java class the way you might expect. This is deliberate: their real shape is defined by *the Python AI service's* output contract, which doesn't exist yet (Phase 3+) and will keep evolving. If Java modeled every field of a brief as its own class, every time Python's output format grows a new field, someone would need to update Java too. Storing it as JSON keeps that contract owned by one side (Python) without Java needing to know its internals — Java just stores and forwards it.
+
+### `ProjectBrief`'s `@Version` field — a neat trick worth understanding
+
+Two browser tabs open on the same project could, in theory, both try to save an edit to the same brief at the same time. Without protection, the second save would silently overwrite the first person's changes without anyone knowing. `@Version` is a one-line JPA annotation that fixes this: Hibernate tracks a counter on the row, and if you try to save based on stale data (someone else already changed it since you read it), your save fails loudly instead of overwriting silently. This is called **optimistic locking** — "optimistic" because it doesn't lock anything upfront; it just checks at save time whether anyone else got there first.
+
+### `WorkingContextAssembler` — the piece the whole "no context bloat" idea depends on
+
+This is the class described in `docs/product-and-architecture.md` §8 as "the critical class." Every single turn of the interview, instead of the AI seeing the *entire* conversation history so far (which is how a normal chatbot works, and why long chats get slow/expensive/confused), it gets handed a freshly-assembled `WorkingContext`: the session's raw idea, a compacted brief summary, only the last 3 exchanges verbatim, the still-open questions (ranked, see below), and a list of topics already covered (so nothing gets asked twice). Turn 40 of an interview costs exactly the same to process as turn 4, because nothing accumulates — it's rebuilt from the database every time, not carried forward in memory.
+
+### `SlotPrioritizer` — deciding what to ask about next
+
+With potentially dozens of open questions ("slots") at once, something has to decide which one matters most right now. `SlotPrioritizer` implements the formula from `interrogation-engine.md` §6: a slot's priority is its importance, multiplied by how much unlocking it (filling it in) would unblock, multiplied by how many *other* pending questions are waiting on it specifically. The Java side does this ranking math; the Python side (once it exists) only has to decide *how to phrase* the highest-priority question, not figure out which one to ask.
+
+---
+
 ## What's next
 
-Phase 1 is functionally complete (repo, Spring Boot skeleton, full schema, Google login + JWT). See `docs/phases/phase-1/` for the setup and verification checklist — the Google login flow specifically needs you to create real credentials in Google Cloud Console, which is not something that can be done from inside the code. Phase 2 (the "memory layer" — how the app remembers an in-progress interview between turns) starts next; it'll get its own section here as it's built.
+Phase 1 is functionally complete (repo, Spring Boot skeleton, full schema, Google login + JWT) — see `docs/phases/phase-1/` for the setup/verification checklist, one item of which needs your own Google Cloud credentials. Phase 2's memory layer (entities + `WorkingContextAssembler`) is built; next is a stubbed connection to where the Python AI service will eventually live, so the whole pipeline (create a session → get a question → answer it → see it persisted) can be exercised end to end even before Python exists.
