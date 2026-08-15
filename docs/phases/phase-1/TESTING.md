@@ -5,6 +5,7 @@ Per `phased-delivery`: Phase 2 doesn't start until this checklist passes. Items 
 ## Automated
 
 - [x] **[done this session]** `./mvnw test` passes — Testcontainers-backed integration test boots the full app against a real (temporary) Postgres, confirms Flyway applies cleanly, and confirms the exact expected set of 16 tables exists (`GrilldBackendApplicationTests.flywayMigrationCreatesFullSchema`).
+- [x] **[done this session]** `OAuth2LoginSuccessHandlerTest` — unit test (Mockito, no DB) proving the post-login handler correctly extracts `googleId`/`email` from Google's `OAuth2User`, calls `UserService`/`TokenService` correctly, and writes the right JSON response. This covers the handler's own logic; it does not (and cannot) cover the actual OAuth2 redirect handshake with Google itself — that's the manual item below.
 
 ## Manual — already verified this session
 
