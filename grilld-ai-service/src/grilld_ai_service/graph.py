@@ -1,20 +1,22 @@
 """Grilld's top-level Deep Agent - the Orchestrator from
 docs/decisions-and-technical-architecture.md §11.1.
 
-Phase 3 scope only: prove the Deep Agents orchestrator boots, delegates to a
-subagent via SubAgentMiddleware, and runs against a Postgres checkpointer that
-survives a process restart. The real specialist roster (Tech Architect, Infra
-Agent, Diagram Agent, Roadmap Agent, Skills Curator, Agent-File Writer,
-Consistency Auditor) is Phase 5; the Interrogator's own LangGraph StateGraph
-subgraph is Phase 4. `ping_agent` below is a deliberately trivial stand-in for
-"a subagent exists and delegation works," not a real specialist.
+Phase 5: the real specialist roster (product-and-architecture.md §3.2)
+replaces the Phase 3 placeholder `ping` subagent. Delegation, flow ordering,
+and per-agent scoped tools are all proven now, not just "a subagent exists."
+The Interrogator/Rubric Agent/Scale Calibrator are separate top-level graphs
+(interrogator/, rubric/, scale_calibrator/), not part of this roster - see
+each package's own docstring for why.
 
 Unlike the deep-agent-python template this was scaffolded from, this does NOT
 use LangSmith's managed cloud sandbox (deepagents.backends.sandbox) - Grilld is
 self-hosted (decisions-and-technical-architecture.md §11.3), so there's no
 LangSmith Platform execution runtime to sandbox against. The default in-process
-backend is what every specialist agent actually needs: they write structured
-documents, not arbitrary shell commands.
+backend (StateBackend, since no `backend` is passed to create_deep_agent) is
+what every specialist agent actually needs: they write structured documents
+into shared graph state, not arbitrary shell commands against a real
+filesystem - and that same default is what makes one subagent's file writes
+visible to the Orchestrator and every other subagent for free, no extra wiring.
 """
 
 from __future__ import annotations
@@ -22,36 +24,68 @@ from __future__ import annotations
 import os
 
 from deepagents import create_deep_agent
-from langchain_core.tools import tool
+
+from grilld_ai_service.specialists.agent_kit import AGENT_FILE_WRITER
+from grilld_ai_service.specialists.audit import CONSISTENCY_AUDITOR
+from grilld_ai_service.specialists.delivery import ROADMAP_AGENT, SKILLS_CURATOR
+from grilld_ai_service.specialists.diagram import DIAGRAM_AGENT
+from grilld_ai_service.specialists.market import COMPETITION_ANALYST, MARKET_ANALYST, STRATEGY_AGENT
+from grilld_ai_service.specialists.tech import INFRA_AGENT, TECH_ARCHITECT
 
 DEFAULT_MODEL = os.getenv("GRILLD_AI_MODEL", "anthropic:claude-sonnet-4-6")
 
+# Flow order per product-and-architecture.md §3.3. The diagram draws the
+# market branch and tech branch as a parallel fan-out, but every agent that
+# can ask the user must run sequentially (§3.1 - no two asking agents
+# interrupting at once), and true parallel dispatch needs orchestration
+# machinery (Send-style fan-out coordination) this Phase doesn't build -
+# Phase 6's territory alongside the rest of orchestration robustness. Running
+# the whole roster sequentially, in this dependency-respecting order, is
+# correct output today; parallelizing the non-asking branches is a latency
+# optimization for later, not a correctness requirement now.
 ORCHESTRATOR_SYSTEM_PROMPT = """
-You are Grilld's Orchestrator. You delegate work to specialist subagents and
-combine their results - you do not do specialist work yourself.
+You are Grilld's Orchestrator. You delegate work to specialist subagents and combine their
+results - you do not do specialist work yourself.
 
-For now (Phase 3), your only subagent is `ping`, used solely to prove
-delegation works end to end. Real specialists (Tech Architect, Infra Agent,
-Roadmap Agent, and the rest of the roster from
-docs/product-and-architecture.md §3.2) are added in Phase 5.
+You will be given a project's brief (as JSON) and its assigned scale tier (T0-T3). Your first
+action, before delegating to anyone: write the brief to /docs/PROJECT_BRIEF.md (a readable
+distillation, not raw JSON dumped verbatim) and note the scale tier at the top of that file - the
+scale tier is the first thing every subagent needs and a hard ceiling on every recommendation
+they make.
+
+Then delegate to every subagent in this exact order, using the `task` tool. Each one already
+knows how to read what previous agents wrote via the shared filesystem (ls, read_file) - you
+don't need to re-paste prior output into their instructions, just tell each one to proceed and
+remind them of the scale tier.
+
+1. market_analyst
+2. competition_analyst
+3. strategy_agent
+4. tech_architect
+5. infra_agent
+6. diagram_agent
+7. roadmap_agent
+8. skills_curator
+9. agent_file_writer
+10. consistency_auditor
+
+Run them in this order, one at a time - do not skip any, and do not run two at once. After the
+last one finishes, report a summary: every file that was written (use ls to check) and whether
+consistency_auditor found any issues.
 """.strip()
 
-
-@tool
-def echo(message: str) -> str:
-    """Echo the given message back. Used only to prove a subagent can call a tool."""
-    return f"ping received: {message}"
-
-
-PING_SUBAGENT = {
-    "name": "ping",
-    "description": "Trivial subagent that proves SubAgentMiddleware delegation works. Not a real specialist.",
-    "system_prompt": (
-        "You are a trivial test subagent. Call the echo tool with the exact "
-        "message you were given, then report back what it returned."
-    ),
-    "tools": [echo],
-}
+SPECIALIST_ROSTER = [
+    MARKET_ANALYST,
+    COMPETITION_ANALYST,
+    STRATEGY_AGENT,
+    TECH_ARCHITECT,
+    INFRA_AGENT,
+    DIAGRAM_AGENT,
+    ROADMAP_AGENT,
+    SKILLS_CURATOR,
+    AGENT_FILE_WRITER,
+    CONSISTENCY_AUDITOR,
+]
 
 
 def build_orchestrator(checkpointer=None):
@@ -63,7 +97,7 @@ def build_orchestrator(checkpointer=None):
     return create_deep_agent(
         model=DEFAULT_MODEL,
         system_prompt=ORCHESTRATOR_SYSTEM_PROMPT,
-        subagents=[PING_SUBAGENT],
+        subagents=SPECIALIST_ROSTER,
         checkpointer=checkpointer,
         name="grilld_orchestrator",
     )

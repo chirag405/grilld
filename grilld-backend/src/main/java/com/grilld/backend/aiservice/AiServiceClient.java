@@ -2,6 +2,8 @@ package com.grilld.backend.aiservice;
 
 import com.grilld.backend.memory.WorkingContext;
 
+import java.util.UUID;
+
 /**
  * The seam between Spring and the Python AI service. One method, because from
  * Spring's side a turn is a turn - the same call shape works whether it's the
@@ -31,4 +33,12 @@ public interface AiServiceClient {
      * tier is shown to the user for override first.
      */
     ScaleCalibrationResult calibrateScale(String briefJson);
+
+    /**
+     * Runs the full specialist roster (docs/product-and-architecture.md
+     * §3.2) against a finalized, scale-calibrated brief. runId doubles as
+     * the LangGraph thread id, one thread per generation attempt - unlike
+     * the Interrogator's one-thread-per-interview-session.
+     */
+    GenerationResult generateBlueprint(UUID runId, String briefJson, String scaleTier);
 }

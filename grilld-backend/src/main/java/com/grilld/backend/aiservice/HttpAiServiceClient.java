@@ -7,8 +7,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Calls the real Interrogator - grilld-ai-service's "interrogator" LangGraph
@@ -155,6 +157,41 @@ public class HttpAiServiceClient implements AiServiceClient {
                 (String) calibrationResult.get("tier"),
                 (String) calibrationResult.get("reasoning"),
                 (List<String>) calibrationResult.get("signals"));
+    }
+
+    @Override
+    public GenerationResult generateBlueprint(UUID runId, String briefJson, String scaleTier) {
+        ensureThreadExists(runId.toString());
+
+        String messageContent = "Here is the project brief (JSON):\n" + (briefJson == null ? "{}" : briefJson)
+                + "\n\nThe assigned scale tier is " + scaleTier + ". Begin.";
+        Map<String, Object> input = Map.of(
+                "messages", List.of(Map.of("role", "user", "content", messageContent))
+        );
+        Map<String, Object> requestBody = Map.of("assistant_id", "orchestrator", "input", input);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> finalState = restClient.post()
+                .uri("/threads/{id}/runs/wait", runId)
+                .body(requestBody)
+                .retrieve()
+                .body(Map.class);
+
+        return parseGenerationResult(finalState);
+    }
+
+    @SuppressWarnings("unchecked")
+    private GenerationResult parseGenerationResult(Map<String, Object> finalState) {
+        Map<String, Object> filesRaw = (Map<String, Object>) finalState.get("files");
+        Map<String, String> files = new LinkedHashMap<>();
+        if (filesRaw != null) {
+            filesRaw.forEach((path, data) -> {
+                Map<String, Object> fileData = (Map<String, Object>) data;
+                List<String> contentLines = (List<String>) fileData.get("content");
+                files.put(path, contentLines == null ? "" : String.join("\n", contentLines));
+            });
+        }
+        return new GenerationResult(files);
     }
 
     private void ensureThreadExists(String threadId) {
