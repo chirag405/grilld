@@ -18,7 +18,9 @@ from __future__ import annotations
 import contextlib
 import os
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph_sdk.runtime import ServerRuntime
 
 from grilld_ai_service.graph import build_orchestrator
 
@@ -30,10 +32,10 @@ DATABASE_URL = os.getenv(
 
 
 @contextlib.asynccontextmanager
-async def get_graph(config=None, runtime=None):
-    """Async graph factory - the shape langgraph.json's `graphs` entry expects
-    when a graph needs async-managed resources (here, the checkpointer's
-    connection pool)."""
+async def get_graph(config: RunnableConfig, runtime: ServerRuntime):
+    """Async graph factory - the LangGraph server requires this exact
+    signature shape (only RunnableConfig/ServerRuntime-typed params) to
+    classify and call it correctly."""
     async with AsyncPostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:
         await checkpointer.setup()  # idempotent - CREATE TABLE IF NOT EXISTS
         yield build_orchestrator(checkpointer=checkpointer)
