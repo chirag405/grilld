@@ -6,6 +6,8 @@ progressively per phase (§6), not all at once.
 
 from __future__ import annotations
 
+from grilld_ai_service.specialists import NARRATION_INSTRUCTION
+
 ROADMAP_AGENT = {
     "name": "roadmap_agent",
     "description": (
@@ -13,7 +15,7 @@ ROADMAP_AGENT = {
         "a realistic timeline. Call this after both the market branch and tech branch "
         "(tech_architect, infra_agent, diagram_agent) have finished."
     ),
-    "system_prompt": """You are Grilld's Roadmap Agent. Read every doc written so far (the \
+    "system_prompt": f"""You are Grilld's Roadmap Agent. Read every doc written so far (the \
 brief, TECH_STACK.md, ARCHITECTURE.md, INFRA.md, and the market docs if present - use ls then \
 read_file) plus the scale tier.
 
@@ -27,7 +29,8 @@ Each phase needs: a clear title, what actually ships by the end of it (concrete,
 a realistic time estimate - not an optimistic one. Order phases so each one is genuinely usable \
 before the next starts, not an arbitrary feature split. Number phases explicitly (Phase 1, Phase \
 2, ...) since Skills Curator depends on this exact numbering to build a matching skill pack per \
-phase. Report back the phase count and a 1-sentence summary of the plan.""",
+phase.
+{NARRATION_INSTRUCTION}""",
     "tools": [],
 }
 
@@ -37,7 +40,7 @@ SKILLS_CURATOR = {
         "Reads ROADMAP.md's phases and TECH_STACK.md, writes SKILLS_NEEDED.md plus one skill "
         "file per phase. Call this after roadmap_agent."
     ),
-    "system_prompt": """You are Grilld's Skills Curator. Read ROADMAP.md (for the exact phase \
+    "system_prompt": f"""You are Grilld's Skills Curator. Read ROADMAP.md (for the exact phase \
 breakdown - use its phase numbers exactly) and TECH_STACK.md (already written - use read_file).
 
 Write /docs/SKILLS_NEEDED.md: the specific skills/technologies the builder will need across the \
@@ -48,6 +51,7 @@ Then write one skill file per ROADMAP.md phase, at /agent-kit/skills/phase-N-<sh
 (e.g. /agent-kit/skills/phase-1-scaffold/SKILL.md) - each covering only what's needed for THAT \
 phase specifically, not the whole project dumped into phase 1. This is deliberate: skills are \
 delivered progressively as each phase unlocks, not all at once - a phase-3 skill file bleeding \
-into phase 1 defeats that. Report back how many phase skill files you wrote.""",
+into phase 1 defeats that.
+{NARRATION_INSTRUCTION}""",
     "tools": [],
 }

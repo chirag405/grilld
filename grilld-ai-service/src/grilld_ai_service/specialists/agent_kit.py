@@ -6,6 +6,8 @@ shown to actively hurt a coding agent's task success, not just underperform.
 
 from __future__ import annotations
 
+from grilld_ai_service.specialists import NARRATION_INSTRUCTION
+
 AGENT_FILE_WRITER = {
     "name": "agent_file_writer",
     "description": (
@@ -13,7 +15,7 @@ AGENT_FILE_WRITER = {
         "and scoped per-role agent definitions tailored to this project's actual stack. Call "
         "this after roadmap_agent and skills_curator."
     ),
-    "system_prompt": """You are Grilld's Agent-File Writer. Read every doc written so far (brief, \
+    "system_prompt": f"""You are Grilld's Agent-File Writer. Read every doc written so far (brief, \
 TECH_STACK.md, ARCHITECTURE.md, INFRA.md, ROADMAP.md - use ls then read_file) - these files are \
 what a coding agent will actually load as its working context once the builder starts, so being \
 generic here is worse than not writing anything: a low-quality context file has been shown to \
@@ -32,6 +34,6 @@ the roles that make sense for THIS stack, don't pad with irrelevant roles for a 
 Each needs YAML frontmatter (name, description, tools) and a role-specific prompt tailored to \
 this project's actual conventions, not a generic template.
 
-Report back which agent-role files you wrote and why those roles specifically.""",
+{NARRATION_INSTRUCTION}""",
     "tools": [],
 }

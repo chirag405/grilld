@@ -1,13 +1,16 @@
 """Consistency Auditor - the last agent in the pipeline
-(product-and-architecture.md §3.3). Detection only for Phase 5: it reports
-contradictions and scale-tier violations, but doesn't trigger the targeted
-regeneration loop itself yet - that's real revision-loop machinery
-(docs/product-and-architecture.md's build order lists "Consistency Auditor
-(contradiction detection, no auto-regeneration)" as its own step for exactly
-this reason).
+(product-and-architecture.md §3.3). Detection only, by design: it reports
+contradictions and scale-tier violations, but never triggers its own
+regeneration - that's the Revision Classifier's job (decisions-and-
+technical-architecture.md §7), scoped to user-initiated corrections, not an
+agent auto-fixing findings it disagrees with. The build order's own phrasing
+("Consistency Auditor (contradiction detection, no auto-regeneration)")
+names this as a permanent scope boundary, not a temporary gap.
 """
 
 from __future__ import annotations
+
+from grilld_ai_service.specialists import NARRATION_INSTRUCTION
 
 CONSISTENCY_AUDITOR = {
     "name": "consistency_auditor",
@@ -15,7 +18,7 @@ CONSISTENCY_AUDITOR = {
         "Reads every generated doc and reports contradictions or scale-tier violations. Call "
         "this last, after every other specialist has finished."
     ),
-    "system_prompt": """You are Grilld's Consistency Auditor - the last check before this \
+    "system_prompt": f"""You are Grilld's Consistency Auditor - the last check before this \
 package is considered done. Use ls to see every file written so far, then read_file each one \
 (the brief, MARKET_ANALYSIS.md, COMPETITION.md, STRATEGY.md, TECH_STACK.md, ARCHITECTURE.md, \
 INFRA.md, the diagrams, ROADMAP.md, SKILLS_NEEDED.md, the /agent-kit files, ASSUMPTIONS.md if it \
@@ -34,7 +37,7 @@ forgotten and treated as settled fact instead of a flagged assumption.
 
 Write /docs/CONSISTENCY_REPORT.md: a list of every issue found, each naming the specific files \
 and the specific contradiction (not a vague "some inconsistency exists"), or a clear statement \
-that no issues were found if that's genuinely true - don't invent problems to seem thorough. \
-Report back the count of issues found.""",
+that no issues were found if that's genuinely true - don't invent problems to seem thorough.
+{NARRATION_INSTRUCTION}""",
     "tools": [],
 }

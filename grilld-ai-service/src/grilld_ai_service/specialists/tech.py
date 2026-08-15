@@ -2,16 +2,19 @@
 sequentially branch from product-and-architecture.md §3.1 (asking agents
 never run concurrently) and §3.3.
 
-Both are spec'd "Can ask user? Yes" - full interactive interrupt/resume is
-Phase 6 scope (docs/decisions-and-technical-architecture.md §11.3's run/
-stream API isn't wired through Spring yet). For Phase 5, "ask" degrades to:
-make the most reasonable, explicitly-justified assumption and record it in
-/docs/ASSUMPTIONS.md instead of blocking - see each prompt's ASSUMPTIONS
-instruction below.
+Both are spec'd "Can ask user? Yes" - full interactive interrupt/resume
+(HumanInTheLoopMiddleware, Spring detecting a pause and calling a resume
+endpoint) is still deferred, even after Phase 6 wired up the run/stream API
+itself (§11.3) for Run Report progress. Streaming progress and pausing for a
+real answer are two different capabilities; only the first is built. "Ask"
+still degrades to: make the most reasonable, explicitly-justified assumption
+and record it in /docs/ASSUMPTIONS.md instead of blocking - see each
+prompt's ASSUMPTIONS instruction below.
 """
 
 from __future__ import annotations
 
+from grilld_ai_service.specialists import NARRATION_INSTRUCTION
 from grilld_ai_service.tools import web_search
 
 ASSUMPTIONS_INSTRUCTION = """
@@ -46,8 +49,7 @@ explicit "Alternatives considered and rejected" section - be opinionated, not a 
 - /docs/ARCHITECTURE.md: how the pieces fit together (a plain-text description is fine; the \
 Diagram Agent turns this into a real diagram later), matched to the scale tier's complexity \
 ceiling.
-{ASSUMPTIONS_INSTRUCTION}
-Report back a 1-2 sentence summary of your recommendation, not the full documents.""",
+{ASSUMPTIONS_INSTRUCTION}{NARRATION_INSTRUCTION}""",
     "tools": [web_search],
 }
 
@@ -75,7 +77,6 @@ Write /docs/INFRA.md (the recommendation and reasoning) and at least one real, u
 stub as a separate file matched to the recommendation - e.g. a Dockerfile at /Dockerfile, or a \
 docker-compose.yml, or a basic CI workflow file - not a placeholder, something that would \
 actually work as a starting point for this specific stack.
-{ASSUMPTIONS_INSTRUCTION}
-Report back a 1-2 sentence summary of your recommendation.""",
+{ASSUMPTIONS_INSTRUCTION}{NARRATION_INSTRUCTION}""",
     "tools": [web_search],
 }

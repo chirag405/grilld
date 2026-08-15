@@ -1,5 +1,7 @@
 package com.grilld.backend.aiservice;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.grilld.backend.memory.WorkingContext;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
@@ -7,10 +9,18 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * Calls the real Interrogator - grilld-ai-service's "interrogator" LangGraph
@@ -34,9 +44,12 @@ import java.util.UUID;
 public class HttpAiServiceClient implements AiServiceClient {
 
     private final RestClient restClient;
+    private final ObjectMapper objectMapper;
 
-    public HttpAiServiceClient(@Value("${grilld.ai-service.base-url:http://localhost:2024}") String baseUrl) {
+    public HttpAiServiceClient(@Value("${grilld.ai-service.base-url:http://localhost:2024}") String baseUrl,
+                                ObjectMapper objectMapper) {
         this.restClient = RestClient.create(baseUrl);
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -161,7 +174,8 @@ public class HttpAiServiceClient implements AiServiceClient {
 
     @Override
     public GenerationResult generateBlueprint(UUID runId, String briefJson, String scaleTier,
-                                               List<String> unresolvedSlotDescriptions) {
+                                               List<String> unresolvedSlotDescriptions,
+                                               Consumer<GenerationProgressEvent> onProgress) {
         ensureThreadExists(runId.toString());
 
         StringBuilder messageContent = new StringBuilder()
@@ -179,30 +193,152 @@ public class HttpAiServiceClient implements AiServiceClient {
         Map<String, Object> input = Map.of(
                 "messages", List.of(Map.of("role", "user", "content", messageContent.toString()))
         );
-        Map<String, Object> requestBody = Map.of("assistant_id", "orchestrator", "input", input);
+        // stream_mode=updates + stream_subgraphs=true: docs/decisions-and-technical-
+        // architecture.md §11.3's run/stream API, verified live against a real run
+        // this phase - the Orchestrator's own top-level "model"/"tools" updates carry
+        // every task() delegation's start (tool_calls[].name=="task") and completion
+        // (a "tools" message with the matching tool_call_id, whose content is that
+        // specialist's own narration - §10.2), with the *namespaced* subgraph events
+        // (event: updates|tools:<id>, one per specialist's own internal steps)
+        // deliberately ignored - a specialist's own file writes surface in the
+        // top-level "files" map the moment it finishes, which is all Spring needs.
+        Map<String, Object> requestBody = Map.of(
+                "assistant_id", "orchestrator",
+                "input", input,
+                "stream_mode", "updates",
+                "stream_subgraphs", true
+        );
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> finalState = restClient.post()
-                .uri("/threads/{id}/runs/wait", runId)
+        return restClient.post()
+                .uri("/threads/{id}/runs/stream", runId)
                 .body(requestBody)
-                .retrieve()
-                .body(Map.class);
+                .exchange((request, response) -> consumeGenerationStream(response.getBody(), onProgress));
+    }
 
-        return parseGenerationResult(finalState);
+    // Package-private (not private) so HttpAiServiceClientTest can feed it a
+    // captured real SSE transcript directly - the parsing logic is the risky,
+    // worth-testing part; the HTTP request-building around it is simple Map
+    // construction.
+    GenerationResult consumeGenerationStream(InputStream body, Consumer<GenerationProgressEvent> onProgress) {
+        Map<String, String> pendingTaskCalls = new HashMap<>(); // tool_call_id -> subagent_type
+        Map<String, String> files = new LinkedHashMap<>();
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
+            String eventType = null;
+            StringBuilder data = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.isEmpty()) {
+                    if (eventType != null && !data.isEmpty()) {
+                        handleSseFrame(eventType, data.toString(), pendingTaskCalls, files, onProgress);
+                    }
+                    eventType = null;
+                    data.setLength(0);
+                } else if (line.startsWith(":")) {
+                    // heartbeat/comment line - not a real event, ignore
+                } else if (line.startsWith("event:")) {
+                    eventType = line.substring("event:".length()).trim();
+                } else if (line.startsWith("data:")) {
+                    if (!data.isEmpty()) {
+                        data.append('\n');
+                    }
+                    data.append(line.substring("data:".length()).trim());
+                }
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed reading the generation run's stream", e);
+        }
+
+        return new GenerationResult(files);
     }
 
     @SuppressWarnings("unchecked")
-    private GenerationResult parseGenerationResult(Map<String, Object> finalState) {
-        Map<String, Object> filesRaw = (Map<String, Object>) finalState.get("files");
-        Map<String, String> files = new LinkedHashMap<>();
-        if (filesRaw != null) {
-            filesRaw.forEach((path, data) -> {
-                Map<String, Object> fileData = (Map<String, Object>) data;
-                List<String> contentLines = (List<String>) fileData.get("content");
-                files.put(path, contentLines == null ? "" : String.join("\n", contentLines));
-            });
+    private void handleSseFrame(String eventType, String data, Map<String, String> pendingTaskCalls,
+                                 Map<String, String> files, Consumer<GenerationProgressEvent> onProgress) {
+        if ("error".equals(eventType)) {
+            Map<String, Object> errorPayload = readJson(data);
+            throw new IllegalStateException("Generation run failed: " + errorPayload.get("message"));
         }
-        return new GenerationResult(files);
+        if (!"updates".equals(eventType)) {
+            return; // ignores "metadata" and the namespaced "updates|tools:<id>" subgraph events
+        }
+
+        Map<String, Object> update = readJson(data);
+
+        Map<String, Object> modelUpdate = (Map<String, Object>) update.get("model");
+        if (modelUpdate != null) {
+            for (Map<String, Object> message : messagesOf(modelUpdate)) {
+                for (Map<String, Object> toolCall : toolCallsOf(message)) {
+                    if (!"task".equals(toolCall.get("name"))) {
+                        continue; // the Orchestrator's own direct file writes, not a delegation
+                    }
+                    Map<String, Object> args = (Map<String, Object>) toolCall.get("args");
+                    String subagentType = (String) args.get("subagent_type");
+                    String toolCallId = (String) toolCall.get("id");
+                    pendingTaskCalls.put(toolCallId, subagentType);
+                    onProgress.accept(new GenerationProgressEvent(
+                            subagentType, GenerationProgressEvent.Status.STARTED, null, List.of()));
+                }
+            }
+        }
+
+        Map<String, Object> toolsUpdate = (Map<String, Object>) update.get("tools");
+        if (toolsUpdate != null) {
+            List<String> newPaths = mergeFiles(files, (Map<String, Object>) toolsUpdate.get("files"));
+
+            for (Map<String, Object> message : messagesOf(toolsUpdate)) {
+                if (!"task".equals(message.get("name"))) {
+                    continue;
+                }
+                String toolCallId = (String) message.get("tool_call_id");
+                String subagentType = pendingTaskCalls.remove(toolCallId);
+                if (subagentType == null) {
+                    continue; // a task completion with no matching start - shouldn't happen, don't crash on it
+                }
+                String narration = (String) message.get("content");
+                onProgress.accept(new GenerationProgressEvent(
+                        subagentType, GenerationProgressEvent.Status.COMPLETED, narration, newPaths));
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> messagesOf(Map<String, Object> nodeUpdate) {
+        Object messages = nodeUpdate.get("messages");
+        return messages == null ? List.of() : (List<Map<String, Object>>) messages;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> toolCallsOf(Map<String, Object> message) {
+        Object toolCalls = message.get("tool_calls");
+        return toolCalls == null ? List.of() : (List<Map<String, Object>>) toolCalls;
+    }
+
+    /** Merges a "files" update into the running cumulative map; returns paths that are new as of this update. */
+    @SuppressWarnings("unchecked")
+    private List<String> mergeFiles(Map<String, String> files, Map<String, Object> filesRaw) {
+        if (filesRaw == null) {
+            return List.of();
+        }
+        List<String> newPaths = new ArrayList<>();
+        filesRaw.forEach((path, fileData) -> {
+            if (!files.containsKey(path)) {
+                newPaths.add(path);
+            }
+            Map<String, Object> data = (Map<String, Object>) fileData;
+            List<String> contentLines = (List<String>) data.get("content");
+            files.put(path, contentLines == null ? "" : String.join("\n", contentLines));
+        });
+        return newPaths;
+    }
+
+    private Map<String, Object> readJson(String json) {
+        try {
+            return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {
+            });
+        } catch (IOException e) {
+            throw new IllegalStateException("Malformed JSON in generation run's SSE stream: " + json, e);
+        }
     }
 
     private void ensureThreadExists(String threadId) {

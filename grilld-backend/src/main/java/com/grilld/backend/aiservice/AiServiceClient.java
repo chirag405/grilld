@@ -4,6 +4,7 @@ import com.grilld.backend.memory.WorkingContext;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * The seam between Spring and the Python AI service. One method, because from
@@ -44,6 +45,16 @@ public interface AiServiceClient {
      * session concluded (via the rubric gate's "never trap" fallback, or the
      * user's force-conclude escape hatch, §7) - the Orchestrator writes these
      * into ASSUMPTIONS.md prominently rather than silently dropping them.
+     *
+     * Blocks for the whole run (real minutes) - but unlike Phases 3-5's
+     * single blocking call, onProgress fires synchronously as each
+     * specialist starts and completes (parsed live from the LangGraph
+     * server's SSE stream, §11.3), so a caller running this on a background
+     * thread (docs/decisions-and-technical-architecture.md §10.3's Run
+     * Report) can persist real per-step progress, not just an end-of-run
+     * summary. See GenerationProgressEvent.
      */
-    GenerationResult generateBlueprint(UUID runId, String briefJson, String scaleTier, List<String> unresolvedSlotDescriptions);
+    GenerationResult generateBlueprint(UUID runId, String briefJson, String scaleTier,
+                                        List<String> unresolvedSlotDescriptions,
+                                        Consumer<GenerationProgressEvent> onProgress);
 }

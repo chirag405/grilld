@@ -4,9 +4,11 @@ import com.grilld.backend.memory.WorkingContext;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * Canned responses standing in for the real Python AI service, which doesn't
@@ -87,8 +89,42 @@ public class StubAiServiceClient implements AiServiceClient {
         return new ScaleCalibrationResult("T1", "stub: always T1", List.of("stub"));
     }
 
+    // Mirrors grilld_ai_service's SPECIALIST_ROSTER order (graph.py) - the stub
+    // simulates the same STARTED-then-COMPLETED sequence a real streamed run
+    // produces, one specialist at a time, so callers built against the
+    // streaming contract (GenerationService, the Run Report) can be exercised
+    // without a live Python service.
+    private static final Map<String, String> STUB_ROSTER_OUTPUT = new LinkedHashMap<>();
+
+    static {
+        STUB_ROSTER_OUTPUT.put("market_analyst", "/docs/MARKET_ANALYSIS.md");
+        STUB_ROSTER_OUTPUT.put("competition_analyst", "/docs/COMPETITION.md");
+        STUB_ROSTER_OUTPUT.put("strategy_agent", "/docs/STRATEGY.md");
+        STUB_ROSTER_OUTPUT.put("tech_architect", "/docs/TECH_STACK.md");
+        STUB_ROSTER_OUTPUT.put("infra_agent", "/docs/INFRA.md");
+        STUB_ROSTER_OUTPUT.put("diagram_agent", "/diagrams/architecture.mmd");
+        STUB_ROSTER_OUTPUT.put("roadmap_agent", "/docs/ROADMAP.md");
+        STUB_ROSTER_OUTPUT.put("skills_curator", "/docs/SKILLS_NEEDED.md");
+        STUB_ROSTER_OUTPUT.put("agent_file_writer", "/agent-kit/AGENTS.md");
+        STUB_ROSTER_OUTPUT.put("consistency_auditor", "/docs/CONSISTENCY_REPORT.md");
+    }
+
     @Override
-    public GenerationResult generateBlueprint(UUID runId, String briefJson, String scaleTier, List<String> unresolvedSlotDescriptions) {
-        return new GenerationResult(Map.of("/docs/PROJECT_BRIEF.md", "stub: " + briefJson));
+    public GenerationResult generateBlueprint(UUID runId, String briefJson, String scaleTier,
+                                               List<String> unresolvedSlotDescriptions,
+                                               Consumer<GenerationProgressEvent> onProgress) {
+        Map<String, String> files = new LinkedHashMap<>();
+        files.put("/docs/PROJECT_BRIEF.md", "stub: " + briefJson);
+
+        STUB_ROSTER_OUTPUT.forEach((agentName, path) -> {
+            onProgress.accept(new GenerationProgressEvent(
+                    agentName, GenerationProgressEvent.Status.STARTED, null, List.of()));
+            files.put(path, "stub output from " + agentName);
+            onProgress.accept(new GenerationProgressEvent(
+                    agentName, GenerationProgressEvent.Status.COMPLETED,
+                    "stub: " + agentName + " finished.", List.of(path)));
+        });
+
+        return new GenerationResult(files);
     }
 }

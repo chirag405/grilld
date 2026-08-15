@@ -28,5 +28,14 @@ def test_full_specialist_roster_configured() -> None:
         assert agent["system_prompt"].strip(), f"{agent['name']} has an empty system prompt"
 
 
+def test_every_specialist_carries_the_narration_requirement() -> None:
+    # decisions-and-technical-architecture.md §10.2 - the Run Report needs a
+    # narration line from every specialist, not just some of them.
+    for agent in SPECIALIST_ROSTER:
+        assert "narration sentence" in agent["system_prompt"], (
+            f"{agent['name']} is missing NARRATION_INSTRUCTION"
+        )
+
+
 def test_system_prompt_is_nonempty() -> None:
     assert len(ORCHESTRATOR_SYSTEM_PROMPT.strip()) > 0
