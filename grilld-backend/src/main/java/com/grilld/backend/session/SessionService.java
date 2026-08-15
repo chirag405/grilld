@@ -4,17 +4,23 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.grilld.backend.aiservice.AiServiceClient;
 import com.grilld.backend.aiservice.InterrogatorTurnResult;
+import com.grilld.backend.aiservice.RubricContext;
+import com.grilld.backend.aiservice.RubricResult;
 import com.grilld.backend.brief.ProjectBrief;
 import com.grilld.backend.brief.ProjectBriefRepository;
 import com.grilld.backend.common.exception.ResourceNotFoundException;
 import com.grilld.backend.memory.WorkingContext;
 import com.grilld.backend.memory.WorkingContextAssembler;
+import com.grilld.backend.slot.RubricEvaluation;
+import com.grilld.backend.slot.RubricEvaluationRepository;
 import com.grilld.backend.slot.Slot;
 import com.grilld.backend.slot.SlotRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -30,18 +36,21 @@ public class SessionService {
     private final ProjectBriefRepository briefRepository;
     private final TurnRepository turnRepository;
     private final SlotRepository slotRepository;
+    private final RubricEvaluationRepository rubricEvaluationRepository;
     private final WorkingContextAssembler contextAssembler;
     private final AiServiceClient aiServiceClient;
     private final ObjectMapper objectMapper;
 
     public SessionService(DiscoverySessionRepository sessionRepository, ProjectBriefRepository briefRepository,
                            TurnRepository turnRepository, SlotRepository slotRepository,
+                           RubricEvaluationRepository rubricEvaluationRepository,
                            WorkingContextAssembler contextAssembler, AiServiceClient aiServiceClient,
                            ObjectMapper objectMapper) {
         this.sessionRepository = sessionRepository;
         this.briefRepository = briefRepository;
         this.turnRepository = turnRepository;
         this.slotRepository = slotRepository;
+        this.rubricEvaluationRepository = rubricEvaluationRepository;
         this.contextAssembler = contextAssembler;
         this.aiServiceClient = aiServiceClient;
         this.objectMapper = objectMapper;
@@ -55,6 +64,10 @@ public class SessionService {
 
         WorkingContext context = contextAssembler.assemble(session.getId());
         InterrogatorTurnResult result = aiServiceClient.nextTurn(context);
+        if (result.nextQuestion() == null) {
+            throw new IllegalStateException(
+                    "Interrogator returned no opening question for session " + session.getId());
+        }
 
         Turn firstTurn = createTurnFromQuestion(session.getId(), 1, result);
         return new SessionStartResult(session.getId(), firstTurn.getQuestionText());
@@ -75,14 +88,72 @@ public class SessionService {
 
         applyExtraction(sessionId, pendingTurn, result);
 
-        if (result.readyToConclude()) {
-            session.touch();
-            return TurnAnswerResult.markConcluded();
+        if (result.readyToConclude() || result.nextQuestion() == null) {
+            // A null nextQuestion with readyToConclude=false is malformed
+            // structured output from the AI side - treat it the same as a
+            // conclude attempt rather than crashing. The rubric gate below
+            // will reject it (and retry with a targeted question) unless the
+            // brief genuinely is complete enough, which is the right outcome
+            // either way.
+            return resolveConclusionAttempt(sessionId, session, pendingTurn);
         }
 
         Turn nextTurn = createTurnFromQuestion(sessionId, pendingTurn.getTurnNumber() + 1, result);
         session.touch();
         return TurnAnswerResult.nextQuestion(nextTurn.getQuestionText());
+    }
+
+    /**
+     * The Interrogator thinks it's done - but per product-and-architecture.md
+     * §7, that's only a proposal. The Rubric Agent is the actual adversarial
+     * gate: on "accept" the session really concludes; on "probe_further" its
+     * open_gaps get handed straight back to the Interrogator for one more,
+     * targeted question (interrogation-engine.md §8) instead of ending.
+     */
+    private TurnAnswerResult resolveConclusionAttempt(UUID sessionId, DiscoverySession session, Turn lastAnsweredTurn) {
+        RubricResult rubric = evaluateRubric(sessionId);
+        persistRubricEvaluation(sessionId, lastAnsweredTurn.getTurnNumber(), rubric);
+
+        if (rubric.accepted()) {
+            session.touch();
+            return TurnAnswerResult.markConcluded();
+        }
+
+        WorkingContext retryContext = contextAssembler.assemble(sessionId, rubric.openGaps());
+        InterrogatorTurnResult retryResult = aiServiceClient.nextTurn(retryContext);
+
+        if (retryResult.readyToConclude() || retryResult.nextQuestion() == null) {
+            // Never trap the user in a loop (interrogation-engine.md §7): if the
+            // Interrogator still can't produce a targeted follow-up after an
+            // explicit rejection, accept what we have rather than looping.
+            // Everything unresolved is already on record via the RubricEvaluation
+            // just persisted above.
+            session.touch();
+            return TurnAnswerResult.markConcluded();
+        }
+
+        Turn nextTurn = createTurnFromQuestion(sessionId, lastAnsweredTurn.getTurnNumber() + 1, retryResult);
+        session.touch();
+        return TurnAnswerResult.nextQuestion(nextTurn.getQuestionText());
+    }
+
+    private RubricResult evaluateRubric(UUID sessionId) {
+        ProjectBrief brief = briefRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("No brief for session " + sessionId));
+        List<RubricContext.SlotSnapshot> slots = slotRepository.findBySessionId(sessionId).stream()
+                .map(s -> new RubricContext.SlotSnapshot(s.getSlotKey(), s.getStatus().name(), s.getValue(), s.getImportance()))
+                .toList();
+        return aiServiceClient.evaluateRubric(new RubricContext(sessionId, brief.getBriefJson(), slots));
+    }
+
+    private void persistRubricEvaluation(UUID sessionId, int atTurn, RubricResult rubric) {
+        Map<String, String> scoresByDimension = new LinkedHashMap<>();
+        rubric.dimensions().forEach(d -> scoresByDimension.put(d.dimension(), d.score()));
+
+        RubricEvaluation evaluation = new RubricEvaluation(
+                sessionId, atTurn, toJson(scoresByDimension), toJson(rubric.openGaps()),
+                RubricEvaluation.Verdict.valueOf(rubric.verdict()));
+        rubricEvaluationRepository.save(evaluation);
     }
 
     private Turn createTurnFromQuestion(UUID sessionId, int turnNumber, InterrogatorTurnResult result) {
@@ -96,10 +167,21 @@ public class SessionService {
 
         for (InterrogatorTurnResult.ExtractedFact fact : result.extractedFacts()) {
             slotRepository.findBySessionIdAndSlotKey(sessionId, fact.slotKey()).ifPresent(slot -> {
+                if (isContradiction(slot, fact)) {
+                    spawnContradictionResolutionSlot(sessionId, slot, fact, answeredTurn.getTurnNumber());
+                    // Deliberately don't overwrite the existing value yet - the resolution
+                    // slot surfaces the conflict on a future turn rather than silently
+                    // picking a side. See interrogation-engine.md §9's ContradictionDetector
+                    // guardrail; this is the Java-side home for it (decisions-and-technical-
+                    // architecture.md §11.1 - the Python Interrogator only sees a compacted
+                    // text summary, not the structured brief, so it can't reliably do this
+                    // comparison itself).
+                    return;
+                }
                 slot.fill(fact.value(), fact.confidence(), answeredTurn.getId().toString(), answeredTurn.getTurnNumber());
                 slotRepository.save(slot);
+                briefPatch.put(fact.slotKey(), fact.value());
             });
-            briefPatch.put(fact.slotKey(), fact.value());
         }
 
         for (InterrogatorTurnResult.NewSlot newSlot : result.newSlots()) {
@@ -119,6 +201,24 @@ public class SessionService {
         List<String> spawnedKeys = result.newSlots().stream().map(InterrogatorTurnResult.NewSlot::key).toList();
         List<String> waivedKeys = result.waivedSlots().stream().map(InterrogatorTurnResult.WaivedSlot::key).toList();
         answeredTurn.applyExtraction(toJson(result.extractedFacts()), spawnedKeys, waivedKeys, null, null);
+    }
+
+    private boolean isContradiction(Slot existingSlot, InterrogatorTurnResult.ExtractedFact fact) {
+        return existingSlot.getStatus() == Slot.Status.FILLED
+                && existingSlot.getValue() != null
+                && !existingSlot.getValue().equals(fact.value());
+    }
+
+    private void spawnContradictionResolutionSlot(UUID sessionId, Slot existingSlot,
+                                                    InterrogatorTurnResult.ExtractedFact fact, int atTurn) {
+        String resolutionKey = existingSlot.getSlotKey() + "_contradiction_turn_" + atTurn;
+        if (slotRepository.findBySessionIdAndSlotKey(sessionId, resolutionKey).isPresent()) {
+            return; // already flagged this exact conflict, don't duplicate
+        }
+        String description = "Contradiction on " + existingSlot.getSlotKey() + ": was \""
+                + existingSlot.getValue() + "\", now \"" + fact.value() + "\" - which is the real answer?";
+        Slot resolutionSlot = new Slot(sessionId, resolutionKey, description, Slot.Origin.PROBE, 5, atTurn);
+        slotRepository.save(resolutionSlot);
     }
 
     private void mergeBriefJson(UUID sessionId, ObjectNode patch) {

@@ -16,4 +16,11 @@ import com.grilld.backend.memory.WorkingContext;
 public interface AiServiceClient {
 
     InterrogatorTurnResult nextTurn(WorkingContext context);
+
+    /**
+     * The quality gate (docs/product-and-architecture.md §7). Called only
+     * when the Interrogator itself signals readyToConclude - the antagonistic
+     * check on that signal, not a per-turn cost.
+     */
+    RubricResult evaluateRubric(RubricContext context);
 }

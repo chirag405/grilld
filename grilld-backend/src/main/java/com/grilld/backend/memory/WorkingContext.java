@@ -16,7 +16,8 @@ public record WorkingContext(
         String compactedBriefSummary,
         List<RecentTurn> recentTurns,
         List<RankedSlot> openSlotsRanked,
-        List<String> answeredTopics
+        List<String> answeredTopics,
+        List<String> openGaps // non-empty only right after a Rubric Agent rejection
 ) {
     public record RecentTurn(
             int turnNumber,

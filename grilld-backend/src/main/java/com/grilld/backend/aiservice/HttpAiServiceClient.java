@@ -11,23 +11,21 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Calls the real Python AI service's self-hosted LangGraph server
- * (docs/decisions-and-technical-architecture.md §11.3) instead of returning
- * canned data. Activate with SPRING_PROFILES_ACTIVE=python-ai-service (or add
- * it alongside `local`) - StubAiServiceClient (@Profile("!python-ai-service"))
- * stays the default everywhere else.
+ * Calls the real Interrogator - grilld-ai-service's "interrogator" LangGraph
+ * (docs/decisions-and-technical-architecture.md §11.3), a plain StateGraph,
+ * not the Orchestrator used for delegation testing in Phase 3. Activate with
+ * SPRING_PROFILES_ACTIVE=python-ai-service; StubAiServiceClient
+ * (@Profile("!python-ai-service")) stays the default everywhere else.
  *
- * Deliberately minimal for Phase 3, matching that phase's actual gate ("Spring
- * calls the real Python service and gets a real, if trivial, response") - not
- * the full Interrogator contract. It forwards a plain message and wraps
- * whatever comes back as a next_question with no fact extraction, no new
- * slots, never concluding. The real slot-graph-aware Interrogator - on both
- * the Python side (a LangGraph subgraph) and this client's request/response
- * shape - is Phase 4, built together since the contract has to match on both
- * ends at once.
+ * The request/response shape here mirrors interrogation-engine.md §3's
+ * contract exactly - WorkingContext's fields become the graph's input state,
+ * and the graph's final "turn_result" field (built by generate_turn in
+ * grilld_ai_service/interrogator/graph.py) is read directly as
+ * InterrogatorTurnResult, not parsed out of a chat message the way Phase 3's
+ * placeholder did.
  *
  * Grilld session id doubles as the LangGraph thread id (1:1, no separate
- * mapping table needed) - carries forward unchanged into Phase 4.
+ * mapping table) - unchanged from Phase 3.
  */
 @Component
 @Profile("python-ai-service")
@@ -43,29 +41,93 @@ public class HttpAiServiceClient implements AiServiceClient {
     public InterrogatorTurnResult nextTurn(WorkingContext context) {
         ensureThreadExists(context.sessionId().toString());
 
-        String prompt = context.recentTurns().isEmpty()
-                ? context.rawIdea()
-                : context.recentTurns().get(0).answerText();
-
-        Map<String, Object> requestBody = Map.of(
-                "assistant_id", "orchestrator",
-                "input", Map.of("messages", List.of(Map.of("role", "user", "content", prompt)))
+        Map<String, Object> input = Map.of(
+                "session_id", context.sessionId().toString(),
+                "raw_idea", context.rawIdea(),
+                "compacted_brief_summary", context.compactedBriefSummary() == null ? "" : context.compactedBriefSummary(),
+                "recent_turns", context.recentTurns().stream().map(this::toPythonTurn).toList(),
+                "open_slots_ranked", context.openSlotsRanked().stream().map(this::toPythonSlot).toList(),
+                "answered_topics", context.answeredTopics(),
+                "open_gaps", context.openGaps()
         );
 
+        Map<String, Object> requestBody = Map.of("assistant_id", "interrogator", "input", input);
+
         @SuppressWarnings("unchecked")
-        Map<String, Object> response = restClient.post()
+        Map<String, Object> finalState = restClient.post()
                 .uri("/threads/{id}/runs/wait", context.sessionId())
                 .body(requestBody)
                 .retrieve()
                 .body(Map.class);
 
-        String replyText = extractLastAiMessage(response);
+        return parseTurnResult(finalState);
+    }
 
-        InterrogatorTurnResult.NextQuestion question = new InterrogatorTurnResult.NextQuestion(
-                replyText, List.of(), null, "text",
-                "Phase 3 placeholder response from the real Python service - not real Interrogator logic yet.");
+    private Map<String, Object> toPythonTurn(WorkingContext.RecentTurn turn) {
+        return Map.of(
+                "turn_number", turn.turnNumber(),
+                "question_text", turn.questionText() == null ? "" : turn.questionText(),
+                "answer_text", turn.answerText() == null ? "" : turn.answerText()
+        );
+    }
 
-        return new InterrogatorTurnResult(List.of(), List.of(), List.of(), question, false);
+    private Map<String, Object> toPythonSlot(WorkingContext.RankedSlot slot) {
+        return Map.of(
+                "slot_key", slot.slotKey(),
+                "description", slot.description(),
+                "importance", slot.importance(),
+                "priority", slot.priority()
+        );
+    }
+
+    @Override
+    public RubricResult evaluateRubric(RubricContext context) {
+        Map<String, Object> input = Map.of(
+                "session_id", context.sessionId().toString(),
+                "brief_json", context.briefJson() == null ? "{}" : context.briefJson(),
+                "slots", context.slots().stream().map(this::toPythonSlotSnapshot).toList()
+        );
+
+        Map<String, Object> requestBody = Map.of("assistant_id", "rubric", "input", input);
+
+        // Stateless run (no thread) - the Rubric Agent has nothing to persist or
+        // resume between calls, unlike the Interrogator's per-session thread.
+        @SuppressWarnings("unchecked")
+        Map<String, Object> finalState = restClient.post()
+                .uri("/runs/wait")
+                .body(requestBody)
+                .retrieve()
+                .body(Map.class);
+
+        return parseRubricResult(finalState);
+    }
+
+    private Map<String, Object> toPythonSlotSnapshot(RubricContext.SlotSnapshot slot) {
+        return Map.of(
+                "slot_key", slot.slotKey(),
+                "status", slot.status(),
+                "value", slot.value() == null ? "" : slot.value(),
+                "importance", slot.importance()
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private RubricResult parseRubricResult(Map<String, Object> finalState) {
+        Map<String, Object> rubricResult = (Map<String, Object>) finalState.get("rubric_result");
+        if (rubricResult == null) {
+            throw new IllegalStateException("Rubric graph returned no rubric_result: " + finalState);
+        }
+
+        List<RubricResult.DimensionResult> dimensions = ((List<Map<String, Object>>) rubricResult.get("dimensions"))
+                .stream()
+                .map(d -> new RubricResult.DimensionResult(
+                        (String) d.get("dimension"), (String) d.get("score"), (String) d.get("reasoning")))
+                .toList();
+
+        String verdict = (String) rubricResult.get("verdict");
+        List<String> openGaps = (List<String>) rubricResult.get("open_gaps");
+
+        return new RubricResult(dimensions, verdict, openGaps == null ? List.of() : openGaps);
     }
 
     private void ensureThreadExists(String threadId) {
@@ -82,17 +144,43 @@ public class HttpAiServiceClient implements AiServiceClient {
     }
 
     @SuppressWarnings("unchecked")
-    private String extractLastAiMessage(Map<String, Object> response) {
-        List<Map<String, Object>> messages = (List<Map<String, Object>>) response.get("messages");
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Map<String, Object> message = messages.get(i);
-            if ("ai".equals(message.get("type"))) {
-                Object content = message.get("content");
-                if (content instanceof String text) {
-                    return text;
-                }
-            }
+    private InterrogatorTurnResult parseTurnResult(Map<String, Object> finalState) {
+        Map<String, Object> turnResult = (Map<String, Object>) finalState.get("turn_result");
+        if (turnResult == null) {
+            throw new IllegalStateException("Interrogator graph returned no turn_result: " + finalState);
         }
-        throw new IllegalStateException("No AI message found in Python service response: " + response);
+
+        List<InterrogatorTurnResult.ExtractedFact> extractedFacts = ((List<Map<String, Object>>) turnResult.get("extracted_facts"))
+                .stream()
+                .map(f -> new InterrogatorTurnResult.ExtractedFact(
+                        (String) f.get("slot_key"), (String) f.get("value"), ((Number) f.get("confidence")).doubleValue()))
+                .toList();
+
+        List<InterrogatorTurnResult.NewSlot> newSlots = ((List<Map<String, Object>>) turnResult.get("new_slots"))
+                .stream()
+                .map(s -> new InterrogatorTurnResult.NewSlot(
+                        (String) s.get("key"), (String) s.get("description"), (String) s.get("origin"),
+                        ((Number) s.get("importance")).intValue(), (String) s.get("parent_slot_key")))
+                .toList();
+
+        List<InterrogatorTurnResult.WaivedSlot> waivedSlots = ((List<Map<String, Object>>) turnResult.get("waived_slots"))
+                .stream()
+                .map(w -> new InterrogatorTurnResult.WaivedSlot((String) w.get("key"), (String) w.get("reason")))
+                .toList();
+
+        boolean readyToConclude = Boolean.TRUE.equals(turnResult.get("ready_to_conclude"));
+
+        InterrogatorTurnResult.NextQuestion nextQuestion = null;
+        Map<String, Object> questionMap = (Map<String, Object>) turnResult.get("next_question");
+        if (questionMap != null) {
+            nextQuestion = new InterrogatorTurnResult.NextQuestion(
+                    (String) questionMap.get("text"),
+                    (List<String>) questionMap.get("targets_slots"),
+                    (String) questionMap.get("technique"),
+                    (String) questionMap.get("input_mode"),
+                    (String) questionMap.get("why_asking"));
+        }
+
+        return new InterrogatorTurnResult(extractedFacts, newSlots, waivedSlots, nextQuestion, readyToConclude);
     }
 }

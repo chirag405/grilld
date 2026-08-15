@@ -29,6 +29,7 @@ grilld-frontend/out/
 # IDE
 .idea/
 .vscode/
+.claude/
 *.iml
 .DS_Store
 Thumbs.db

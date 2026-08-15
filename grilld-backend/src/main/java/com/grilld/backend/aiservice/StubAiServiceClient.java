@@ -70,4 +70,13 @@ public class StubAiServiceClient implements AiServiceClient {
 
         return new InterrogatorTurnResult(List.of(fact), List.of(newSlot), List.of(), question, false);
     }
+
+    @Override
+    public RubricResult evaluateRubric(RubricContext context) {
+        // Always accepts - the stub's interview is only 3 turns deep and exists to
+        // exercise the persistence pipeline, not to prove rubric judgment quality.
+        List<RubricResult.DimensionResult> dimensions = List.of(
+                new RubricResult.DimensionResult("problem_clarity", "PASS", "stub: always passes"));
+        return new RubricResult(dimensions, "accept", List.of());
+    }
 }

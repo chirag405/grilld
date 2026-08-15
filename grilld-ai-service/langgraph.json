@@ -2,7 +2,9 @@
   "$schema": "https://langgra.ph/schema.json",
   "dependencies": ["."],
   "graphs": {
-    "orchestrator": "grilld_ai_service.app:get_graph"
+    "orchestrator": "grilld_ai_service.app:get_graph",
+    "interrogator": "grilld_ai_service.interrogator.graph:graph",
+    "rubric": "grilld_ai_service.rubric.graph:graph"
   },
   "env": ".env"
 }

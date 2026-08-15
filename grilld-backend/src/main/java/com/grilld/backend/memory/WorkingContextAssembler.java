@@ -48,6 +48,10 @@ public class WorkingContextAssembler {
     }
 
     public WorkingContext assemble(UUID sessionId) {
+        return assemble(sessionId, List.of());
+    }
+
+    public WorkingContext assemble(UUID sessionId, List<String> openGaps) {
         DiscoverySession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("No session " + sessionId));
 
@@ -78,7 +82,8 @@ public class WorkingContextAssembler {
                 compactedSummary,
                 recentTurns,
                 slotPrioritizer.rank(openSlots),
-                answeredTopics
+                answeredTopics,
+                openGaps
         );
     }
 }

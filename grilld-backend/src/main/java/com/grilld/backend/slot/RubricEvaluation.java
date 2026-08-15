@@ -18,8 +18,9 @@ import java.util.UUID;
  * One row of `rubric_evaluations` - one Rubric Agent pass over the brief.
  * `scores` holds the per-dimension FAIL/BORDERLINE/PASS categorical result
  * (docs/decisions-and-technical-architecture.md §11.4 - moved off a 1-5 scale
- * since fine-grained LLM-as-judge scoring is unreliable). Written by the real
- * Rubric Agent starting Phase 4; not yet populated by any code today.
+ * since fine-grained LLM-as-judge scoring is unreliable). Written by
+ * SessionService.persistRubricEvaluation() whenever the Interrogator signals
+ * readyToConclude - one row per gate check, not per turn.
  */
 @Entity
 @Table(name = "rubric_evaluations")
@@ -59,6 +60,30 @@ public class RubricEvaluation {
         this.scores = scoresJson;
         this.openGaps = openGapsJson;
         this.verdict = verdict;
+    }
+
+    public UUID getId() {
+        return id;
+    }
+
+    public UUID getSessionId() {
+        return sessionId;
+    }
+
+    public int getAtTurn() {
+        return atTurn;
+    }
+
+    public String getScores() {
+        return scores;
+    }
+
+    public String getOpenGaps() {
+        return openGaps;
+    }
+
+    public Verdict getVerdict() {
+        return verdict;
     }
 
     public enum Verdict {
