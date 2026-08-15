@@ -357,3 +357,44 @@ Asked directly: "are we actually handling the edge cases a real user will hit - 
 **There were two different, half-implemented homes for "the scale tier"** - `project_briefs.scale_tier` (built and working, Phase 5) and a *second*, entirely dead `discovery_sessions.scale_tier` column that had been sitting in the schema since `V1__init_schema.sql` (Phase 1/2), literally commented `// T0-T3; set by the Scale Calibrator agent, Phase 5` - a placeholder nobody ever came back to remove once the real thing landed somewhere else. Found only by grepping for every use of `scaleTier`/`scale_tier` across the codebase before adding new code near it, rather than assuming the first definition found was the only one. Dropped the dead column in a new migration (`V3`) rather than leaving two columns silently able to drift out of sync with each other - a good habit worth repeating: before extending a concept that "should already have a place to live," grep for whether it already does.
 
 **The escape hatch itself** ("just generate it" - `product-and-architecture.md` §7) was fully speced but had never been built: `SessionService.forceConclude()` + `POST /api/v1/sessions/{id}/force-conclude`, unconditional, no rubric check, calls the same `markReadyForGeneration()` fix above. Wired through to generation too: `GenerationService` now looks up every still-`OPEN` slot for the session and passes their descriptions to `HttpAiServiceClient.generateBlueprint()`, which the Orchestrator (Python side) writes into `/docs/ASSUMPTIONS.md` prominently before delegating to anyone - so "everything unresolved lands in ASSUMPTIONS.md" is now an actual, tested code path end to end, not just a line in a spec doc.
+
+---
+
+## Phase 6 (in progress): watching a generation run happen, not just its result
+
+Phase 5 proved the specialist roster produces the right documents. It did that the cheap way, though: Spring made one blocking HTTP call, waited for the *entire* 10-agent run to finish, and only then found out anything about what had happened - which agent ran, what it wrote, whether it said anything worth showing a user. That's fine for proving the roster works, but it's not the real shape of the product: a generation run can take minutes, and a user staring at a blank screen for that long with zero feedback is a broken experience. Phase 6 replaces "wait for the whole thing, then look at the final state" with "watch it happen, one agent at a time, in real time."
+
+### The contract: `GenerationProgressEvent`
+
+A new record, `aiservice/GenerationProgressEvent.java`, is the one new shape this phase is built around:
+
+```java
+public record GenerationProgressEvent(
+        String agentName, Status status, String narration, List<String> newFilePaths) {
+    public enum Status { STARTED, COMPLETED }
+}
+```
+
+`AiServiceClient.generateBlueprint()` grew a fifth parameter: `Consumer<GenerationProgressEvent> onProgress` - a callback the caller hands in, that the implementation invokes twice per specialist agent that actually runs (once `STARTED` with no narration/files yet, once `COMPLETED` with the agent's own closing narration sentence and whatever new doc paths it wrote). This is the same "programming to an interface" idea from Phase 2's `AiServiceClient.nextTurn()` - `GenerationService` doesn't know or care whether the events come from real SSE parsing or a stub loop; it just reacts to whatever the callback delivers.
+
+### Reading the Python side's stream, not just its final answer
+
+`HttpAiServiceClient.generateBlueprint()` no longer calls LangGraph's `/threads/{id}/runs/wait` (Phase 5's blocking call). It now calls `/threads/{id}/runs/stream` with `stream_mode=updates, stream_subgraphs=true` and reads the response as **Server-Sent Events** - a plain HTTP response where the body arrives as a sequence of `event: ...` / `data: {...}` line pairs instead of one JSON blob at the end. `RestClient.exchange()` (rather than the simpler `.retrieve()` used everywhere else in this codebase) is what makes this possible: it hands back the raw `ClientHttpResponse`, meaning the raw `InputStream` of the HTTP body, so `consumeGenerationStream()` can read and react to it line by line as bytes arrive, instead of Spring buffering the whole response into one object first.
+
+The parsing logic (`consumeGenerationStream`, `handleSseFrame`, `messagesOf`, `toolCallsOf`, `mergeFiles`) has to reconstruct something LangGraph doesn't hand you directly: "which specialist agent is this event even about, and did it just start or just finish?" The trick is correlating two different kinds of `updates` events by the tool call id:
+
+1. When the Orchestrator's own model turn includes a `task` tool call (Deep Agents' delegation tool), that event's message carries a `tool_calls` list - each entry has an `id` and the delegate's name as an argument. That id is remembered as "this subagent just started."
+2. When a later event's `tools` node reports a `ToolMessage` whose `tool_call_id` matches that remembered id, the subagent is done - and that message's own content is the specialist's final narration sentence (the `NARRATION_INSTRUCTION` line every specialist prompt ends with, from the Python-side Phase 5 retro).
+3. New file paths for that agent are found by diffing the graph's `files` state before and after that tool message - whatever paths exist afterward that didn't exist before are attributed to the agent that just finished.
+
+Getting this right without repeatedly burning real API tokens against a live run was the same lesson from Phase 4's Rubric Agent testing, applied again: capture **one** real transcript from a genuinely cheap live call (Haiku, one specialist delegated to, real streaming), save it as `src/test/resources/sse-fixtures/single-agent-run.sse`, and write `HttpAiServiceClientTest` against that fixture. It runs in every `mvn test` invocation from then on with zero network calls and zero cost, but it's still testing against something a real model actually produced - not a hand-guessed shape of what LangGraph's SSE format probably looks like.
+
+### `GenerationService` rewritten around incremental truth, not a final snapshot
+
+The old `GenerationService.generate()` (Phase 5) called the AI service, got one `GenerationResult` back at the end, and built every `AgentExecution` row from a hardcoded `AGENT_PRIMARY_OUTPUT` map guessing which file belonged to which agent by convention. That map is gone. `generate()` now passes `event -> handleProgressEvent(run.getId(), event)` as the `onProgress` callback, and `handleProgressEvent()` creates an `AgentExecution` row (`status=RUNNING`) the moment a `STARTED` event arrives, then updates that same row to `COMPLETED` with its real narration and output path when the matching `COMPLETED` event arrives. The rows in the database now reflect what actually happened during the run, observed live, instead of being inferred after the fact from the final state.
+
+This mattered enough to write a test specifically proving the dishonest case can't happen silently: `anAgentThatStartedButNeverCompletedStaysRunning` stubs a run where `market_analyst` finishes cleanly but `competition_analyst` only ever fires `STARTED` before the mocked client throws (simulating a dropped connection mid-stream). The test asserts `market_analyst`'s row is `COMPLETED` and `competition_analyst`'s row is left `RUNNING` - not silently marked done, not silently deleted. That's not an accident of the implementation; it's the specific thing the still-pending resume sweep (task 4 of this phase) needs to be able to find: "which `AgentExecution` rows are stuck in `RUNNING` past their expected time" is only a meaningful question if `RUNNING` rows are trustworthy in the first place.
+
+### Why `@Transactional` still isn't back
+
+Phase 5's transaction bug (removing `@Transactional` from `generate()` so a failure-path write wouldn't get rolled back with everything else) is even more true now: this method now holds a connection open for a multi-minute *streamed* HTTP call with many incremental writes happening throughout it, not just one call and one write at the end. Wrapping that in a single transaction would hold a pooled database connection for the entire run's duration - exactly the anti-pattern called out last phase, just more pronounced now that the call is genuinely long-lived instead of a single blocking round trip.
