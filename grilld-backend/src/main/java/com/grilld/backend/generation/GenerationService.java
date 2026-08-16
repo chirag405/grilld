@@ -2,6 +2,7 @@ package com.grilld.backend.generation;
 
 import com.grilld.backend.aiservice.AiServiceClient;
 import com.grilld.backend.aiservice.GenerationProgressEvent;
+import com.grilld.backend.aiservice.GenerationResult;
 import com.grilld.backend.brief.ProjectBrief;
 import com.grilld.backend.brief.ProjectBriefRepository;
 import com.grilld.backend.common.exception.GenerationBlockedException;
@@ -36,13 +37,17 @@ public class GenerationService {
     private final RunReportService runReportService;
     private final RunReportBroadcaster runReportBroadcaster;
     private final CostCircuitBreakerService costCircuitBreakerService;
+    private final GeneratedDocumentRepository generatedDocumentRepository;
+    private final PackagerService packagerService;
 
     public GenerationService(ProjectBriefRepository briefRepository, SlotRepository slotRepository,
                               GenerationRunRepository generationRunRepository,
                               AgentExecutionRepository agentExecutionRepository, AiServiceClient aiServiceClient,
                               TaskExecutor generationExecutor, RunReportService runReportService,
                               RunReportBroadcaster runReportBroadcaster,
-                              CostCircuitBreakerService costCircuitBreakerService) {
+                              CostCircuitBreakerService costCircuitBreakerService,
+                              GeneratedDocumentRepository generatedDocumentRepository,
+                              PackagerService packagerService) {
         this.briefRepository = briefRepository;
         this.slotRepository = slotRepository;
         this.generationRunRepository = generationRunRepository;
@@ -52,6 +57,8 @@ public class GenerationService {
         this.runReportService = runReportService;
         this.runReportBroadcaster = runReportBroadcaster;
         this.costCircuitBreakerService = costCircuitBreakerService;
+        this.generatedDocumentRepository = generatedDocumentRepository;
+        this.packagerService = packagerService;
     }
 
     /**
@@ -124,13 +131,23 @@ public class GenerationService {
         // not a blank report until the first specialist starts.
         updateAndBroadcastReport(runId, brief.getScaleTier());
         try {
-            aiServiceClient.generateBlueprint(
+            GenerationResult result = aiServiceClient.generateBlueprint(
                     runId, brief.getBriefJson(), brief.getScaleTier(), unresolvedSlotDescriptions,
                     event -> handleProgressEvent(runId, brief.getScaleTier(), event));
+
+            // Persisted here, not incrementally per event - generateBlueprint()'s own
+            // accumulated "files" map is already the complete, correct set by the time
+            // it returns; there's nothing this would gain from tracking mid-stream, and
+            // an event never carried content anyway (only paths - see GenerationProgressEvent).
+            result.files().forEach((path, content) ->
+                    generatedDocumentRepository.save(new GeneratedDocument(runId, path, content)));
+
             GenerationRun run = generationRunRepository.findById(runId).orElseThrow();
             run.markCompleted();
             generationRunRepository.save(run);
             runReportBroadcaster.publish(runId, run);
+
+            packagerService.packageRun(runId);
         } catch (RuntimeException e) {
             GenerationRun run = generationRunRepository.findById(runId).orElseThrow();
             run.markFailed(e.getMessage());

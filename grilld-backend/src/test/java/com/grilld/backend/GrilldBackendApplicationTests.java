@@ -45,7 +45,7 @@ class GrilldBackendApplicationTests {
                 "users", "discovery_sessions", "interview_answers", "slots", "turns",
                 "expertise_profiles", "rubric_evaluations", "slot_waives", "project_briefs",
                 "generation_runs", "agent_executions", "platform_settings", "packages",
-                "package_documents", "project_phases", "credit_transactions"
+                "package_documents", "project_phases", "credit_transactions", "generated_documents"
         );
 
         assertEquals(expected, Set.copyOf(tables));

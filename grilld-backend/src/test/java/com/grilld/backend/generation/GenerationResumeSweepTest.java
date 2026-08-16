@@ -19,6 +19,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -46,7 +47,7 @@ import static org.mockito.Mockito.when;
  */
 @Testcontainers
 @SpringBootTest
-@TestPropertySource(properties = "grilld.generation.resume-sweep.stale-after-ms=50")
+@TestPropertySource(properties = "grilld.generation.resume-sweep.stale-after-ms=60000")
 class GenerationResumeSweepTest {
 
     @Container
@@ -67,6 +68,9 @@ class GenerationResumeSweepTest {
 
     @Autowired
     GenerationResumeSweep generationResumeSweep;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
 
     @MockitoBean
     AiServiceClient aiServiceClient;
@@ -103,7 +107,8 @@ class GenerationResumeSweepTest {
         UUID completedBriefId = calibratedBriefId("resume-done-google-id", "resume-done@example.com");
 
         GenerationRun staleRun = generationRunRepository.save(new GenerationRun(staleBriefId));
-        Thread.sleep(100); // older than the 50ms threshold configured above
+        jdbcTemplate.update("update generation_runs set updated_at = now() - interval '2 minutes' where id = ?",
+                staleRun.getId());
 
         GenerationRun freshRun = generationRunRepository.save(new GenerationRun(freshBriefId));
 

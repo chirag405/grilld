@@ -1,5 +1,6 @@
 # Java / Maven
 grilld-backend/target/
+grilld-backend/data/
 grilld-backend/.mvn/wrapper/maven-wrapper.jar
 *.class
 *.jar
