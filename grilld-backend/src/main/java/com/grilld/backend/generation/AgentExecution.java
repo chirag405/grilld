@@ -61,6 +61,13 @@ public class AgentExecution {
         this.agentName = agentName;
     }
 
+    /** Resets an existing row back to RUNNING - the resumeStaleRun() case where Python re-reports an agent that already had a row from before a Spring restart. */
+    public void markStarted() {
+        this.status = Status.RUNNING;
+        this.error = null;
+        this.heartbeatAt = Instant.now();
+    }
+
     public void markCompleted(String outputRef, String narration) {
         this.status = Status.COMPLETED;
         this.outputRef = outputRef;

@@ -78,6 +78,29 @@ public class GenerationService {
         return new GenerationRunResult(run.getId(), run.getStatus().name(), Map.of());
     }
 
+    /**
+     * Re-triggers a run {@link GenerationResumeSweep} found stuck at
+     * IN_PROGRESS with no recent activity - the case where this JVM
+     * restarted mid-run and lost whatever background thread was working on
+     * it. Relies on the Python side's own LangGraph checkpointer (§10.5) to
+     * resume correctly rather than redo completed work when
+     * generateBlueprint() is called again for the same run id - this is a
+     * deliberately reduced scope with no reconciliation against Python's own
+     * run status first, since langgraph dev's status bookkeeping is itself
+     * in-memory/ephemeral right now (see LEARNING.md's Phase 6 task 4 note).
+     */
+    public void resumeStaleRun(GenerationRun run) {
+        ProjectBrief brief = briefRepository.findById(run.getBriefId())
+                .orElseThrow(() -> new ResourceNotFoundException("No brief for run " + run.getId()));
+        List<String> unresolvedSlotDescriptions = slotRepository
+                .findBySessionIdAndStatus(brief.getSessionId(), Slot.Status.OPEN)
+                .stream()
+                .map(Slot::getDescription)
+                .toList();
+
+        generationExecutor.execute(() -> runGeneration(run.getId(), brief, unresolvedSlotDescriptions));
+    }
+
     // Runs off the request thread (see generate()). Deliberately NOT
     // @Transactional: generateBlueprint() is a slow external HTTP call (a
     // full specialist-roster run, real minutes) that also invokes onProgress
@@ -108,7 +131,13 @@ public class GenerationService {
 
     private void handleProgressEvent(UUID runId, String scaleTier, GenerationProgressEvent event) {
         if (event.status() == GenerationProgressEvent.Status.STARTED) {
-            agentExecutionRepository.save(new AgentExecution(runId, event.agentName()));
+            // Reuses an existing row rather than always inserting - matters for
+            // resumeStaleRun(), where Python may re-report an agent that already
+            // has a row from before the restart (COMPLETED or a stale RUNNING).
+            AgentExecution execution = agentExecutionRepository.findByRunIdAndAgentName(runId, event.agentName())
+                    .orElseGet(() -> new AgentExecution(runId, event.agentName()));
+            execution.markStarted();
+            agentExecutionRepository.save(execution);
         } else {
             AgentExecution execution = agentExecutionRepository.findByRunIdAndAgentName(runId, event.agentName())
                     .orElseGet(() -> new AgentExecution(runId, event.agentName()));

@@ -48,6 +48,12 @@ public class GenerationRun {
     @Column(name = "completed_at")
     private Instant completedAt;
 
+    // Touched on every write below - what the resume sweep (GenerationResumeSweep)
+    // compares against its staleness threshold to find a run whose background
+    // thread died with its restarting JVM instead of reaching COMPLETED/FAILED.
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt = Instant.now();
+
     protected GenerationRun() {
     }
 
@@ -62,17 +68,20 @@ public class GenerationRun {
      */
     public void updateRunReport(String runReportMd) {
         this.runReportMd = runReportMd;
+        this.updatedAt = Instant.now();
     }
 
     public void markCompleted() {
         this.status = Status.COMPLETED;
         this.completedAt = Instant.now();
+        this.updatedAt = completedAt;
     }
 
     public void markFailed(String errorSummary) {
         this.status = Status.FAILED;
         this.failureReason = errorSummary;
         this.completedAt = Instant.now();
+        this.updatedAt = completedAt;
     }
 
     public UUID getId() {
@@ -93,6 +102,10 @@ public class GenerationRun {
 
     public String getFailureReason() {
         return failureReason;
+    }
+
+    public Instant getUpdatedAt() {
+        return updatedAt;
     }
 
     public enum Status {
