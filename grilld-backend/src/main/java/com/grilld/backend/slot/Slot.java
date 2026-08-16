@@ -11,6 +11,7 @@ import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -82,12 +83,26 @@ public class Slot {
         this.createdAtTurn = createdAtTurn;
     }
 
+    /** A DERIVED/PROBE slot spawned from an existing one - see {@link #addUnlockedSlot} on the parent side of this link. */
+    public Slot(UUID sessionId, String slotKey, String description, Origin origin, int importance, int createdAtTurn,
+                String parentSlotKey) {
+        this(sessionId, slotKey, description, origin, importance, createdAtTurn);
+        this.parentSlotKey = parentSlotKey;
+    }
+
     public void fill(String value, double confidence, String evidenceRef, int atTurn) {
         this.value = value;
         this.confidence = confidence;
         this.evidenceRef = evidenceRef;
         this.filledAtTurn = atTurn;
         this.status = Status.FILLED;
+    }
+
+    /** Records that filling/changing this slot is what caused {@code childSlotKey} to be spawned - the RevisionClassifier's blast-radius traversal (docs/decisions-and-technical-architecture.md §7). */
+    public void addUnlockedSlot(String childSlotKey) {
+        List<String> updated = new ArrayList<>(this.unlocks);
+        updated.add(childSlotKey);
+        this.unlocks = updated;
     }
 
     public UUID getId() {

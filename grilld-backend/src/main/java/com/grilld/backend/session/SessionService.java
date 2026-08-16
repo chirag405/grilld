@@ -41,12 +41,13 @@ public class SessionService {
     private final WorkingContextAssembler contextAssembler;
     private final AiServiceClient aiServiceClient;
     private final ObjectMapper objectMapper;
+    private final RevisionClassifier revisionClassifier;
 
     public SessionService(DiscoverySessionRepository sessionRepository, ProjectBriefRepository briefRepository,
                            TurnRepository turnRepository, SlotRepository slotRepository,
                            RubricEvaluationRepository rubricEvaluationRepository,
                            WorkingContextAssembler contextAssembler, AiServiceClient aiServiceClient,
-                           ObjectMapper objectMapper) {
+                           ObjectMapper objectMapper, RevisionClassifier revisionClassifier) {
         this.sessionRepository = sessionRepository;
         this.briefRepository = briefRepository;
         this.turnRepository = turnRepository;
@@ -55,6 +56,7 @@ public class SessionService {
         this.contextAssembler = contextAssembler;
         this.aiServiceClient = aiServiceClient;
         this.objectMapper = objectMapper;
+        this.revisionClassifier = revisionClassifier;
     }
 
     @Transactional
@@ -224,9 +226,26 @@ public class SessionService {
             // turn). Silently skip rather than let a duplicate-key error surface as a
             // 500 - this is a data quirk from the AI side, not a request the user made.
             if (slotRepository.findBySessionIdAndSlotKey(sessionId, newSlot.key()).isEmpty()) {
-                Slot slot = new Slot(sessionId, newSlot.key(), newSlot.description(),
-                        Slot.Origin.valueOf(newSlot.origin()), newSlot.importance(), answeredTurn.getTurnNumber());
+                Slot slot = newSlot.parentSlotKey() == null
+                        ? new Slot(sessionId, newSlot.key(), newSlot.description(),
+                                Slot.Origin.valueOf(newSlot.origin()), newSlot.importance(), answeredTurn.getTurnNumber())
+                        : new Slot(sessionId, newSlot.key(), newSlot.description(),
+                                Slot.Origin.valueOf(newSlot.origin()), newSlot.importance(), answeredTurn.getTurnNumber(),
+                                newSlot.parentSlotKey());
                 slotRepository.save(slot);
+
+                // The reverse link: RevisionClassifier's blast-radius traversal walks a
+                // parent's `unlocks` outward to find already-FILLED descendants that a
+                // contradiction on the parent would invalidate (§7). Was never wired up
+                // before this phase - parentSlotKey came through the AI service's
+                // response but was silently dropped.
+                if (newSlot.parentSlotKey() != null) {
+                    slotRepository.findBySessionIdAndSlotKey(sessionId, newSlot.parentSlotKey())
+                            .ifPresent(parent -> {
+                                parent.addUnlockedSlot(newSlot.key());
+                                slotRepository.save(parent);
+                            });
+                }
             }
         }
 
@@ -249,10 +268,48 @@ public class SessionService {
         if (slotRepository.findBySessionIdAndSlotKey(sessionId, resolutionKey).isPresent()) {
             return; // already flagged this exact conflict, don't duplicate
         }
-        String description = "Contradiction on " + existingSlot.getSlotKey() + ": was \""
-                + existingSlot.getValue() + "\", now \"" + fact.value() + "\" - which is the real answer?";
+
+        RevisionClassifier.Classification classification = revisionClassifier.classify(existingSlot);
+        String description = classification.type() == RevisionClassifier.Type.MAJOR_REVISION
+                ? majorRevisionDescription(existingSlot, fact, classification)
+                : minorCorrectionDescription(existingSlot, fact);
+
         Slot resolutionSlot = new Slot(sessionId, resolutionKey, description, Slot.Origin.PROBE, 5, atTurn);
         slotRepository.save(resolutionSlot);
+    }
+
+    private String minorCorrectionDescription(Slot existingSlot, InterrogatorTurnResult.ExtractedFact fact) {
+        return "Contradiction on " + existingSlot.getSlotKey() + ": was \""
+                + existingSlot.getValue() + "\", now \"" + fact.value() + "\" - which is the real answer?";
+    }
+
+    /**
+     * MAJOR_REVISION never silently cascades (§7) - the description itself is
+     * the surfaced confirmation prompt today, since there's no dedicated
+     * confirm-then-regenerate UI/pipeline built yet for either revision class
+     * (that's real, separate scope - see LEARNING.md's Phase 6 task 6 note).
+     * The "[MAJOR REVISION]" prefix is a deliberate, greppable marker so this
+     * class of resolution slot is distinguishable from an ordinary one
+     * without needing a schema change.
+     */
+    private String majorRevisionDescription(Slot existingSlot, InterrogatorTurnResult.ExtractedFact fact,
+                                              RevisionClassifier.Classification classification) {
+        StringBuilder description = new StringBuilder("[MAJOR REVISION] This looks like more than a quick fix - ")
+                .append(existingSlot.getSlotKey()).append(" was \"").append(existingSlot.getValue())
+                .append("\", now \"").append(fact.value()).append("\".");
+        if (classification.touchesSeedSlot()) {
+            description.append(" That's a core assumption (").append(existingSlot.getSlotKey()).append(")");
+            if (!classification.invalidatedDescendantSlotKeys().isEmpty()) {
+                description.append(", and it also affects ").append(classification.invalidatedDescendantSlotKeys().size())
+                        .append(" already-answered question(s) building on it");
+            }
+            description.append('.');
+        } else {
+            description.append(" It invalidates ").append(classification.invalidatedDescendantSlotKeys().size())
+                    .append(" already-answered question(s) that built on it.");
+        }
+        description.append(" Confirm this is a real pivot, not a one-off correction, before we treat it that way.");
+        return description.toString();
     }
 
     private void mergeBriefJson(UUID sessionId, ObjectNode patch) {
