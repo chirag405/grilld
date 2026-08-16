@@ -222,6 +222,14 @@ public class HttpAiServiceClient implements AiServiceClient {
     GenerationResult consumeGenerationStream(InputStream body, Consumer<GenerationProgressEvent> onProgress) {
         Map<String, String> pendingTaskCalls = new HashMap<>(); // tool_call_id -> subagent_type
         Map<String, String> files = new LinkedHashMap<>();
+        // [inputTokens, outputTokens] for whichever specialist is currently delegated
+        // to - reset the moment a new "task" tool call starts, read and attached to
+        // its GenerationProgressEvent when the matching completion arrives. A single
+        // shared accumulator is only correct because specialists run strictly
+        // sequentially (product-and-architecture.md §3.1/§3.3, Phase 5's own build
+        // order) - it would misattribute tokens across two genuinely concurrent
+        // delegations, which this codebase doesn't currently produce.
+        int[] pendingTokens = new int[2];
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
             String eventType = null;
@@ -230,7 +238,7 @@ public class HttpAiServiceClient implements AiServiceClient {
             while ((line = reader.readLine()) != null) {
                 if (line.isEmpty()) {
                     if (eventType != null && !data.isEmpty()) {
-                        handleSseFrame(eventType, data.toString(), pendingTaskCalls, files, onProgress);
+                        handleSseFrame(eventType, data.toString(), pendingTaskCalls, files, pendingTokens, onProgress);
                     }
                     eventType = null;
                     data.setLength(0);
@@ -254,13 +262,23 @@ public class HttpAiServiceClient implements AiServiceClient {
 
     @SuppressWarnings("unchecked")
     private void handleSseFrame(String eventType, String data, Map<String, String> pendingTaskCalls,
-                                 Map<String, String> files, Consumer<GenerationProgressEvent> onProgress) {
+                                 Map<String, String> files, int[] pendingTokens, Consumer<GenerationProgressEvent> onProgress) {
         if ("error".equals(eventType)) {
             Map<String, Object> errorPayload = readJson(data);
             throw new IllegalStateException("Generation run failed: " + errorPayload.get("message"));
         }
+        if (eventType.startsWith("updates|")) {
+            // The namespaced per-specialist subgraph events (stream_subgraphs=true) -
+            // ignored for delegation tracking (that's the top-level "updates" event's
+            // job) but the only place a specialist's own real token usage is visible;
+            // the top-level "tools" completion message carries the narration but no
+            // usage_metadata (it's a ToolMessage, not an AIMessage - see LEARNING.md's
+            // Phase 6 task 5 note).
+            accumulateSubgraphTokens(data, pendingTokens);
+            return;
+        }
         if (!"updates".equals(eventType)) {
-            return; // ignores "metadata" and the namespaced "updates|tools:<id>" subgraph events
+            return; // ignores "metadata"
         }
 
         Map<String, Object> update = readJson(data);
@@ -276,8 +294,10 @@ public class HttpAiServiceClient implements AiServiceClient {
                     String subagentType = (String) args.get("subagent_type");
                     String toolCallId = (String) toolCall.get("id");
                     pendingTaskCalls.put(toolCallId, subagentType);
+                    pendingTokens[0] = 0;
+                    pendingTokens[1] = 0;
                     onProgress.accept(new GenerationProgressEvent(
-                            subagentType, GenerationProgressEvent.Status.STARTED, null, List.of()));
+                            subagentType, GenerationProgressEvent.Status.STARTED, null, List.of(), null, null));
                 }
             }
         }
@@ -297,7 +317,31 @@ public class HttpAiServiceClient implements AiServiceClient {
                 }
                 String narration = (String) message.get("content");
                 onProgress.accept(new GenerationProgressEvent(
-                        subagentType, GenerationProgressEvent.Status.COMPLETED, narration, newPaths));
+                        subagentType, GenerationProgressEvent.Status.COMPLETED, narration, newPaths,
+                        pendingTokens[0], pendingTokens[1]));
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void accumulateSubgraphTokens(String data, int[] pendingTokens) {
+        Map<String, Object> update = readJson(data);
+        Map<String, Object> modelUpdate = (Map<String, Object>) update.get("model");
+        if (modelUpdate == null) {
+            return; // a non-model subgraph update (e.g. middleware bookkeeping) - nothing to sum
+        }
+        for (Map<String, Object> message : messagesOf(modelUpdate)) {
+            Map<String, Object> usage = (Map<String, Object>) message.get("usage_metadata");
+            if (usage == null) {
+                continue;
+            }
+            Number inputTokens = (Number) usage.get("input_tokens");
+            Number outputTokens = (Number) usage.get("output_tokens");
+            if (inputTokens != null) {
+                pendingTokens[0] += inputTokens.intValue();
+            }
+            if (outputTokens != null) {
+                pendingTokens[1] += outputTokens.intValue();
             }
         }
     }

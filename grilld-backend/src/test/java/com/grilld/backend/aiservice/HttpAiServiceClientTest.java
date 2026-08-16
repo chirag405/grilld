@@ -41,6 +41,7 @@ class HttpAiServiceClientTest {
         assertEquals("strategy_agent", started.agentName());
         assertEquals(GenerationProgressEvent.Status.STARTED, started.status());
         assertTrue(started.newFilePaths().isEmpty());
+        assertEquals(null, started.inputTokens(), "no usage to report yet on STARTED");
 
         GenerationProgressEvent completed = events.get(1);
         assertEquals("strategy_agent", completed.agentName());
@@ -48,6 +49,11 @@ class HttpAiServiceClientTest {
         assertEquals(List.of("/docs/STRATEGY.md"), completed.newFilePaths());
         assertTrue(completed.narration().contains("STRATEGY.md"),
                 "expected the specialist's real final report as narration, got: " + completed.narration());
+        // Summed from the two namespaced "model" node updates in the fixture's
+        // subgraph events (usage_metadata: 4101/102 and 4224/36) - the narration
+        // message itself (a ToolMessage) carries no usage at all.
+        assertEquals(8325, completed.inputTokens());
+        assertEquals(138, completed.outputTokens());
 
         assertEquals(1, result.files().size());
         assertTrue(result.files().get("/docs/STRATEGY.md")

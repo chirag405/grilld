@@ -36,7 +36,7 @@ class RunReportServiceTest {
     @Test
     void completedRunningAndQueuedAgentsRenderWithTheirOwnSymbols() {
         AgentExecution completed = new AgentExecution(runId, "market_analyst");
-        completed.markCompleted("/docs/MARKET_ANALYSIS.md", "Researched the real market for this idea.");
+        completed.markCompleted("/docs/MARKET_ANALYSIS.md", "Researched the real market for this idea.", 100, 50);
 
         AgentExecution running = new AgentExecution(runId, "competition_analyst");
 

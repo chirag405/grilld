@@ -4,6 +4,7 @@ import com.grilld.backend.aiservice.AiServiceClient;
 import com.grilld.backend.aiservice.GenerationProgressEvent;
 import com.grilld.backend.brief.ProjectBrief;
 import com.grilld.backend.brief.ProjectBriefRepository;
+import com.grilld.backend.common.exception.GenerationBlockedException;
 import com.grilld.backend.common.exception.ResourceNotFoundException;
 import com.grilld.backend.slot.Slot;
 import com.grilld.backend.slot.SlotRepository;
@@ -34,12 +35,14 @@ public class GenerationService {
     private final TaskExecutor generationExecutor;
     private final RunReportService runReportService;
     private final RunReportBroadcaster runReportBroadcaster;
+    private final CostCircuitBreakerService costCircuitBreakerService;
 
     public GenerationService(ProjectBriefRepository briefRepository, SlotRepository slotRepository,
                               GenerationRunRepository generationRunRepository,
                               AgentExecutionRepository agentExecutionRepository, AiServiceClient aiServiceClient,
                               TaskExecutor generationExecutor, RunReportService runReportService,
-                              RunReportBroadcaster runReportBroadcaster) {
+                              RunReportBroadcaster runReportBroadcaster,
+                              CostCircuitBreakerService costCircuitBreakerService) {
         this.briefRepository = briefRepository;
         this.slotRepository = slotRepository;
         this.generationRunRepository = generationRunRepository;
@@ -48,6 +51,7 @@ public class GenerationService {
         this.generationExecutor = generationExecutor;
         this.runReportService = runReportService;
         this.runReportBroadcaster = runReportBroadcaster;
+        this.costCircuitBreakerService = costCircuitBreakerService;
     }
 
     /**
@@ -59,6 +63,12 @@ public class GenerationService {
      * Watch progress via the run's SSE endpoint or by polling its status.
      */
     public GenerationRunResult generate(UUID sessionId) {
+        if (costCircuitBreakerService.isKillSwitchActive()) {
+            // Same pre-authorization point credits will eventually be checked at
+            // (Phase 7, spec-v2 §13) - refuses before any AI-service call, not mid-run.
+            throw new GenerationBlockedException("Grilld's briefly paused for a check, try again shortly.");
+        }
+
         ProjectBrief brief = briefRepository.findBySessionId(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("No brief for session " + sessionId));
         if (brief.getScaleTier() == null) {
@@ -142,7 +152,7 @@ public class GenerationService {
             AgentExecution execution = agentExecutionRepository.findByRunIdAndAgentName(runId, event.agentName())
                     .orElseGet(() -> new AgentExecution(runId, event.agentName()));
             String outputRef = event.newFilePaths().isEmpty() ? null : String.join(", ", event.newFilePaths());
-            execution.markCompleted(outputRef, event.narration());
+            execution.markCompleted(outputRef, event.narration(), event.inputTokens(), event.outputTokens());
             agentExecutionRepository.save(execution);
         }
         updateAndBroadcastReport(runId, scaleTier);

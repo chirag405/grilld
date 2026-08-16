@@ -6,6 +6,7 @@ import com.grilld.backend.aiservice.GenerationResult;
 import com.grilld.backend.aiservice.InterrogatorTurnResult;
 import com.grilld.backend.aiservice.ScaleCalibrationResult;
 import com.grilld.backend.brief.ProjectBriefRepository;
+import com.grilld.backend.common.exception.GenerationBlockedException;
 import com.grilld.backend.session.SessionService;
 import com.grilld.backend.user.User;
 import com.grilld.backend.user.UserService;
@@ -79,6 +80,9 @@ class GenerationServiceTest {
     @Autowired
     UserService userService;
 
+    @Autowired
+    PlatformSettingsRepository platformSettingsRepository;
+
     @MockitoBean
     AiServiceClient aiServiceClient;
 
@@ -118,9 +122,9 @@ class GenerationServiceTest {
                         String path = (String) step[1];
                         String narration = (String) step[2];
                         onProgress.accept(new GenerationProgressEvent(
-                                agentName, GenerationProgressEvent.Status.STARTED, null, List.of()));
+                                agentName, GenerationProgressEvent.Status.STARTED, null, List.of(), null, null));
                         onProgress.accept(new GenerationProgressEvent(
-                                agentName, GenerationProgressEvent.Status.COMPLETED, narration, List.of(path)));
+                                agentName, GenerationProgressEvent.Status.COMPLETED, narration, List.of(path), 100, 50));
                     }
                     return new GenerationResult(finalFiles);
                 });
@@ -194,11 +198,11 @@ class GenerationServiceTest {
                 .thenAnswer(invocation -> {
                     Consumer<GenerationProgressEvent> onProgress = invocation.getArgument(4);
                     onProgress.accept(new GenerationProgressEvent(
-                            "market_analyst", GenerationProgressEvent.Status.STARTED, null, List.of()));
+                            "market_analyst", GenerationProgressEvent.Status.STARTED, null, List.of(), null, null));
                     onProgress.accept(new GenerationProgressEvent(
-                            "market_analyst", GenerationProgressEvent.Status.COMPLETED, "Done.", List.of("/docs/MARKET_ANALYSIS.md")));
+                            "market_analyst", GenerationProgressEvent.Status.COMPLETED, "Done.", List.of("/docs/MARKET_ANALYSIS.md"), 100, 50));
                     onProgress.accept(new GenerationProgressEvent(
-                            "competition_analyst", GenerationProgressEvent.Status.STARTED, null, List.of()));
+                            "competition_analyst", GenerationProgressEvent.Status.STARTED, null, List.of(), null, null));
                     throw new RuntimeException("connection dropped mid-stream");
                 });
 
@@ -246,5 +250,20 @@ class GenerationServiceTest {
         SessionService.SessionStartResult started = sessionService.startSession(user.getId(), "a scheduling tool");
 
         assertThrows(IllegalStateException.class, () -> generationService.generate(started.sessionId()));
+    }
+
+    @Test
+    void generateRefusesToStartWhileTheCostKillSwitchIsActive() {
+        var sessionId = startCalibratedSession("gen-killswitch-google-id", "gen-killswitch@example.com");
+
+        PlatformSetting killSwitch = platformSettingsRepository.findById("kill_switch_active").orElseThrow();
+        killSwitch.updateValue("true");
+        platformSettingsRepository.save(killSwitch);
+        try {
+            assertThrows(GenerationBlockedException.class, () -> generationService.generate(sessionId));
+        } finally {
+            killSwitch.updateValue("false"); // don't poison other tests sharing this context
+            platformSettingsRepository.save(killSwitch);
+        }
     }
 }

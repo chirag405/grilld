@@ -118,11 +118,11 @@ public class StubAiServiceClient implements AiServiceClient {
 
         STUB_ROSTER_OUTPUT.forEach((agentName, path) -> {
             onProgress.accept(new GenerationProgressEvent(
-                    agentName, GenerationProgressEvent.Status.STARTED, null, List.of()));
+                    agentName, GenerationProgressEvent.Status.STARTED, null, List.of(), null, null));
             files.put(path, "stub output from " + agentName);
             onProgress.accept(new GenerationProgressEvent(
                     agentName, GenerationProgressEvent.Status.COMPLETED,
-                    "stub: " + agentName + " finished.", List.of(path)));
+                    "stub: " + agentName + " finished.", List.of(path), 100, 50));
         });
 
         return new GenerationResult(files);

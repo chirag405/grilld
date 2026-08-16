@@ -47,6 +47,16 @@ public class AgentExecution {
 
     private String narration;
 
+    // Summed from the specialist's own subgraph "model" node usage_metadata
+    // (HttpAiServiceClient.accumulateSubgraphTokens) - feeds the cost circuit
+    // breaker (§10.6). Null until COMPLETED; null forever for a run predating
+    // this field or one where the AI service never reports usage.
+    @Column(name = "input_tokens")
+    private Integer inputTokens;
+
+    @Column(name = "output_tokens")
+    private Integer outputTokens;
+
     @Column(name = "started_at", nullable = false, updatable = false)
     private Instant startedAt = Instant.now();
 
@@ -68,10 +78,12 @@ public class AgentExecution {
         this.heartbeatAt = Instant.now();
     }
 
-    public void markCompleted(String outputRef, String narration) {
+    public void markCompleted(String outputRef, String narration, Integer inputTokens, Integer outputTokens) {
         this.status = Status.COMPLETED;
         this.outputRef = outputRef;
         this.narration = narration;
+        this.inputTokens = inputTokens;
+        this.outputTokens = outputTokens;
         this.heartbeatAt = Instant.now();
     }
 
@@ -107,6 +119,14 @@ public class AgentExecution {
 
     public String getError() {
         return error;
+    }
+
+    public Integer getInputTokens() {
+        return inputTokens;
+    }
+
+    public Integer getOutputTokens() {
+        return outputTokens;
     }
 
     public enum Status {

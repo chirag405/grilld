@@ -14,7 +14,12 @@ public record GenerationProgressEvent(
         String agentName,
         Status status,
         String narration, // the specialist's own final report - null on STARTED
-        List<String> newFilePaths // files newly present after this agent ran - empty on STARTED
+        List<String> newFilePaths, // files newly present after this agent ran - empty on STARTED
+        // Summed from the specialist's own namespaced subgraph "model" node updates
+        // (usage_metadata on each AI message) between its STARTED and this COMPLETED -
+        // null on STARTED. Feeds the cost circuit breaker (§10.6) via AgentExecution.
+        Integer inputTokens,
+        Integer outputTokens
 ) {
     public enum Status {
         STARTED, COMPLETED

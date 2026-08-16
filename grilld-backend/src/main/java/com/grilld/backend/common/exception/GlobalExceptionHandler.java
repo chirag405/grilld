@@ -39,6 +39,11 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.FORBIDDEN, "Access denied", request);
     }
 
+    @ExceptionHandler(GenerationBlockedException.class)
+    public ResponseEntity<ErrorResponse> handleGenerationBlocked(GenerationBlockedException ex, HttpServletRequest request) {
+        return respond(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
         return respond(HttpStatus.BAD_REQUEST, ex.getMessage(), request);

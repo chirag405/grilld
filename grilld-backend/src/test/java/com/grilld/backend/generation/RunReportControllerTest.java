@@ -107,10 +107,10 @@ class RunReportControllerTest {
                 .thenAnswer(invocation -> {
                     Consumer<GenerationProgressEvent> onProgress = invocation.getArgument(4);
                     onProgress.accept(new GenerationProgressEvent(
-                            "market_analyst", GenerationProgressEvent.Status.STARTED, null, List.of()));
+                            "market_analyst", GenerationProgressEvent.Status.STARTED, null, List.of(), null, null));
                     onProgress.accept(new GenerationProgressEvent(
                             "market_analyst", GenerationProgressEvent.Status.COMPLETED,
-                            "Researched the real market for this idea.", List.of("/docs/MARKET_ANALYSIS.md")));
+                            "Researched the real market for this idea.", List.of("/docs/MARKET_ANALYSIS.md"), 100, 50));
                     return new GenerationResult(Map.of("/docs/MARKET_ANALYSIS.md", "content"));
                 });
     }
