@@ -2,12 +2,12 @@ package com.grilld.backend.generation;
 
 import com.grilld.backend.aiservice.AiServiceClient;
 import com.grilld.backend.aiservice.GenerationProgressEvent;
-import com.grilld.backend.aiservice.GenerationResult;
 import com.grilld.backend.brief.ProjectBrief;
 import com.grilld.backend.brief.ProjectBriefRepository;
 import com.grilld.backend.common.exception.ResourceNotFoundException;
 import com.grilld.backend.slot.Slot;
 import com.grilld.backend.slot.SlotRepository;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -31,24 +31,33 @@ public class GenerationService {
     private final GenerationRunRepository generationRunRepository;
     private final AgentExecutionRepository agentExecutionRepository;
     private final AiServiceClient aiServiceClient;
+    private final TaskExecutor generationExecutor;
+    private final RunReportService runReportService;
+    private final RunReportBroadcaster runReportBroadcaster;
 
     public GenerationService(ProjectBriefRepository briefRepository, SlotRepository slotRepository,
                               GenerationRunRepository generationRunRepository,
-                              AgentExecutionRepository agentExecutionRepository, AiServiceClient aiServiceClient) {
+                              AgentExecutionRepository agentExecutionRepository, AiServiceClient aiServiceClient,
+                              TaskExecutor generationExecutor, RunReportService runReportService,
+                              RunReportBroadcaster runReportBroadcaster) {
         this.briefRepository = briefRepository;
         this.slotRepository = slotRepository;
         this.generationRunRepository = generationRunRepository;
         this.agentExecutionRepository = agentExecutionRepository;
         this.aiServiceClient = aiServiceClient;
+        this.generationExecutor = generationExecutor;
+        this.runReportService = runReportService;
+        this.runReportBroadcaster = runReportBroadcaster;
     }
 
-    // Deliberately NOT @Transactional: generateBlueprint() below is a slow
-    // external HTTP call (a full specialist-roster run, real minutes) that
-    // now also invokes onProgress synchronously as it streams - each
-    // invocation does its own .save(), committed independently, so a
-    // partially-completed run's rows survive even if a later step fails.
-    // Holding one big transaction open across a multi-minute streamed call
-    // would be wrong regardless of the failure path.
+    /**
+     * Validates preconditions and creates the {@link GenerationRun} row
+     * synchronously (so a caller gets an immediate, honest error for a
+     * missing brief/scale tier), then hands the actual multi-minute
+     * specialist-roster call off to {@link #generationExecutor} and returns
+     * the run id right away - the caller no longer blocks for the whole run.
+     * Watch progress via the run's SSE endpoint or by polling its status.
+     */
     public GenerationRunResult generate(UUID sessionId) {
         ProjectBrief brief = briefRepository.findBySessionId(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("No brief for session " + sessionId));
@@ -64,31 +73,57 @@ public class GenerationService {
                 .map(Slot::getDescription)
                 .toList();
 
+        generationExecutor.execute(() -> runGeneration(run.getId(), brief, unresolvedSlotDescriptions));
+
+        return new GenerationRunResult(run.getId(), run.getStatus().name(), Map.of());
+    }
+
+    // Runs off the request thread (see generate()). Deliberately NOT
+    // @Transactional: generateBlueprint() is a slow external HTTP call (a
+    // full specialist-roster run, real minutes) that also invokes onProgress
+    // synchronously as it streams - each invocation does its own .save(),
+    // committed independently, so a partially-completed run's rows survive
+    // even if a later step fails. Holding one big transaction open across a
+    // multi-minute streamed call would be wrong regardless of the failure path.
+    private void runGeneration(UUID runId, ProjectBrief brief, List<String> unresolvedSlotDescriptions) {
+        // Assemble once up front so a client that subscribes right after generate()
+        // returns sees "brief finalized" + the full queued roster immediately,
+        // not a blank report until the first specialist starts.
+        updateAndBroadcastReport(runId, brief.getScaleTier());
         try {
-            GenerationResult result = aiServiceClient.generateBlueprint(
-                    run.getId(), brief.getBriefJson(), brief.getScaleTier(), unresolvedSlotDescriptions,
-                    event -> handleProgressEvent(run.getId(), event));
-            run.markCompleted("Generated " + result.files().size() + " files.");
+            aiServiceClient.generateBlueprint(
+                    runId, brief.getBriefJson(), brief.getScaleTier(), unresolvedSlotDescriptions,
+                    event -> handleProgressEvent(runId, brief.getScaleTier(), event));
+            GenerationRun run = generationRunRepository.findById(runId).orElseThrow();
+            run.markCompleted();
             generationRunRepository.save(run);
-            return new GenerationRunResult(run.getId(), run.getStatus().name(), result.files());
+            runReportBroadcaster.publish(runId, run);
         } catch (RuntimeException e) {
+            GenerationRun run = generationRunRepository.findById(runId).orElseThrow();
             run.markFailed(e.getMessage());
             generationRunRepository.save(run);
-            throw e;
+            runReportBroadcaster.publish(runId, run);
         }
     }
 
-    private void handleProgressEvent(UUID runId, GenerationProgressEvent event) {
+    private void handleProgressEvent(UUID runId, String scaleTier, GenerationProgressEvent event) {
         if (event.status() == GenerationProgressEvent.Status.STARTED) {
             agentExecutionRepository.save(new AgentExecution(runId, event.agentName()));
-            return;
+        } else {
+            AgentExecution execution = agentExecutionRepository.findByRunIdAndAgentName(runId, event.agentName())
+                    .orElseGet(() -> new AgentExecution(runId, event.agentName()));
+            String outputRef = event.newFilePaths().isEmpty() ? null : String.join(", ", event.newFilePaths());
+            execution.markCompleted(outputRef, event.narration());
+            agentExecutionRepository.save(execution);
         }
+        updateAndBroadcastReport(runId, scaleTier);
+    }
 
-        AgentExecution execution = agentExecutionRepository.findByRunIdAndAgentName(runId, event.agentName())
-                .orElseGet(() -> new AgentExecution(runId, event.agentName()));
-        String outputRef = event.newFilePaths().isEmpty() ? null : String.join(", ", event.newFilePaths());
-        execution.markCompleted(outputRef, event.narration());
-        agentExecutionRepository.save(execution);
+    private void updateAndBroadcastReport(UUID runId, String scaleTier) {
+        GenerationRun run = generationRunRepository.findById(runId).orElseThrow();
+        run.updateRunReport(runReportService.assemble(runId, scaleTier));
+        generationRunRepository.save(run);
+        runReportBroadcaster.publish(runId, run);
     }
 
     public record GenerationRunResult(UUID runId, String status, Map<String, String> files) {

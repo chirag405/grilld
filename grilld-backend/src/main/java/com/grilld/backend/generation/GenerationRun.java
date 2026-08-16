@@ -39,6 +39,9 @@ public class GenerationRun {
     @Column(name = "run_report_md")
     private String runReportMd;
 
+    @Column(name = "failure_reason")
+    private String failureReason;
+
     @Column(name = "started_at", nullable = false, updatable = false)
     private Instant startedAt = Instant.now();
 
@@ -52,15 +55,23 @@ public class GenerationRun {
         this.briefId = briefId;
     }
 
-    public void markCompleted(String runReportMd) {
-        this.status = Status.COMPLETED;
+    /**
+     * Rewrites the Run Report in place (§10.3) - called on every
+     * agent_executions change via RunReportService, not just at the end.
+     * Does not touch status/completedAt.
+     */
+    public void updateRunReport(String runReportMd) {
         this.runReportMd = runReportMd;
+    }
+
+    public void markCompleted() {
+        this.status = Status.COMPLETED;
         this.completedAt = Instant.now();
     }
 
     public void markFailed(String errorSummary) {
         this.status = Status.FAILED;
-        this.runReportMd = errorSummary;
+        this.failureReason = errorSummary;
         this.completedAt = Instant.now();
     }
 
@@ -78,6 +89,10 @@ public class GenerationRun {
 
     public String getRunReportMd() {
         return runReportMd;
+    }
+
+    public String getFailureReason() {
+        return failureReason;
     }
 
     public enum Status {

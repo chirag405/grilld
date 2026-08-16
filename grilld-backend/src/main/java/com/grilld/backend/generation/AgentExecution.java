@@ -14,13 +14,13 @@ import java.util.UUID;
 
 /**
  * One row of `agent_executions` - one specialist's contribution to a
- * {@link GenerationRun}. Phase 5 populates this from the single blocking
- * response of the whole roster (HttpAiServiceClient.generateBlueprint), not
- * from real per-step webhooks - so every row for a successful run is written
- * at once, all COMPLETED, with no real input/output token or duration
- * numbers yet. Genuine per-step tracking needs the streaming/webhook call
- * pattern from docs/decisions-and-technical-architecture.md §11.3, which is
- * Phase 6 scope (Run Report + SSE) - documented here rather than faked.
+ * {@link GenerationRun}. Since Phase 6, this is populated live: a row is
+ * created on the specialist's STARTED event and updated on COMPLETED/FAILED,
+ * as HttpAiServiceClient parses the real SSE stream from the Python service
+ * (docs/decisions-and-technical-architecture.md §10.2, §11.3) - not written
+ * all-at-once after a single blocking call. {@link RunReportService} reads
+ * {@code narration}/{@code status}/{@code error} off these rows to assemble
+ * the Run Report (§10.3) on every update.
  */
 @Entity
 @Table(name = "agent_executions")
@@ -92,6 +92,14 @@ public class AgentExecution {
 
     public String getOutputRef() {
         return outputRef;
+    }
+
+    public String getNarration() {
+        return narration;
+    }
+
+    public String getError() {
+        return error;
     }
 
     public enum Status {

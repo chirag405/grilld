@@ -14,7 +14,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+import org.springframework.core.task.SyncTaskExecutor;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -41,6 +46,12 @@ import static org.mockito.Mockito.when;
  * tests/integration_tests/test_graph.py's job on the Python side (real
  * Claude, real web search, real files) plus a live curl-driven check for the
  * SSE parsing itself.
+ *
+ * generate() now hands the run off to a background TaskExecutor and returns
+ * immediately (Phase 6) - this test overrides that executor with a
+ * SyncTaskExecutor (runs the task on the calling thread) so assertions right
+ * after generate() see the finished result deterministically, with no
+ * polling/sleeping needed.
  */
 @Testcontainers
 @SpringBootTest
@@ -70,6 +81,15 @@ class GenerationServiceTest {
 
     @MockitoBean
     AiServiceClient aiServiceClient;
+
+    @TestConfiguration
+    static class SyncExecutorConfig {
+        @Bean
+        @Primary
+        TaskExecutor testGenerationExecutor() {
+            return new SyncTaskExecutor();
+        }
+    }
 
     private UUID startCalibratedSession(String googleId, String email) {
         User user = userService.findOrCreateFromGoogle(googleId, email);
@@ -120,11 +140,15 @@ class GenerationServiceTest {
 
         GenerationService.GenerationRunResult result = generationService.generate(sessionId);
 
-        assertEquals("COMPLETED", result.status());
-        assertEquals(2, result.files().size());
-
+        // generate() itself only returns the immediate handle (IN_PROGRESS, no
+        // files yet) - the SyncTaskExecutor override means the run has already
+        // finished on the calling thread by the time control returns here, so
+        // the persisted row (not the return value) is what's asserted on.
         GenerationRun run = generationRunRepository.findById(result.runId()).orElseThrow();
         assertEquals(GenerationRun.Status.COMPLETED, run.getStatus());
+        assertTrue(run.getRunReportMd().contains("✓ Market Analyst — Researched the real market for this idea."),
+                "expected the Run Report to carry the completed agent's narration, got:\n" + run.getRunReportMd());
+        assertTrue(run.getRunReportMd().contains("✓ Strategy Agent — Positioned around the go-to-market gap found."));
 
         List<AgentExecution> executions = agentExecutionRepository.findByRunId(result.runId());
         assertEquals(2, executions.size(), "one AgentExecution per specialist that actually ran, from real events");
@@ -144,7 +168,10 @@ class GenerationServiceTest {
                 ArgumentMatchers.any(), ArgumentMatchers.any()))
                 .thenThrow(new RuntimeException("python service unreachable"));
 
-        assertThrows(RuntimeException.class, () -> generationService.generate(sessionId));
+        // The AI-service exception now happens on the background executor, not on
+        // this thread - generate() itself no longer throws (see runGeneration()'s
+        // catch); the SyncTaskExecutor override still makes this deterministic.
+        generationService.generate(sessionId);
 
         List<GenerationRun> runs = generationRunRepository.findByBriefIdOrderByStartedAtDesc(
                 briefRepository.findBySessionId(sessionId).orElseThrow().getId());
@@ -175,7 +202,7 @@ class GenerationServiceTest {
                     throw new RuntimeException("connection dropped mid-stream");
                 });
 
-        assertThrows(RuntimeException.class, () -> generationService.generate(sessionId));
+        generationService.generate(sessionId);
 
         UUID briefId = briefRepository.findBySessionId(sessionId).orElseThrow().getId();
         UUID runId = generationRunRepository.findByBriefIdOrderByStartedAtDesc(briefId).get(0).getId();

@@ -10,7 +10,11 @@ import java.util.UUID;
 /**
  * Triggers the specialist roster against a scale-calibrated brief
  * (Phase 5's stated gate: "a full generation run, triggered via API, no UI,
- * produces every expected doc artifact").
+ * produces every expected doc artifact"). Since Phase 6, {@code generate}
+ * returns immediately with the new run's id and status {@code IN_PROGRESS} -
+ * the actual multi-minute run happens on a background thread
+ * (GenerationService.generate). Watch it via {@code GET .../runs/{runId}/events}
+ * (RunReportController).
  */
 @RestController
 @RequestMapping("/api/v1/sessions")
