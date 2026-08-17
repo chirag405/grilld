@@ -3,13 +3,18 @@ package com.grilld.backend.generation;
 import com.grilld.backend.aiservice.AiServiceClient;
 import com.grilld.backend.aiservice.GenerationProgressEvent;
 import com.grilld.backend.aiservice.GenerationResult;
+import com.grilld.backend.billing.CreditService;
 import com.grilld.backend.brief.ProjectBrief;
 import com.grilld.backend.brief.ProjectBriefRepository;
 import com.grilld.backend.common.exception.GenerationBlockedException;
+import com.grilld.backend.common.exception.InsufficientCreditsException;
 import com.grilld.backend.common.exception.ResourceNotFoundException;
+import com.grilld.backend.session.DiscoverySession;
+import com.grilld.backend.session.DiscoverySessionRepository;
 import com.grilld.backend.slot.Slot;
 import com.grilld.backend.slot.SlotRepository;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -28,7 +33,14 @@ import java.util.UUID;
 @Service
 public class GenerationService {
 
+    // product-and-architecture.md §10 / decisions-and-technical-architecture.md §9:
+    // "Full blueprint | ~50" - the flat pre-authorization charge for one generation
+    // run. Per-action costs (interview turns, single-doc regen, phase check-in) are
+    // deliberately not metered yet - see LEARNING.md's Phase 7 task 1 note for why.
+    static final int FULL_BLUEPRINT_CREDITS = 50;
+
     private final ProjectBriefRepository briefRepository;
+    private final DiscoverySessionRepository discoverySessionRepository;
     private final SlotRepository slotRepository;
     private final GenerationRunRepository generationRunRepository;
     private final AgentExecutionRepository agentExecutionRepository;
@@ -39,16 +51,19 @@ public class GenerationService {
     private final CostCircuitBreakerService costCircuitBreakerService;
     private final GeneratedDocumentRepository generatedDocumentRepository;
     private final PackagerService packagerService;
+    private final CreditService creditService;
 
-    public GenerationService(ProjectBriefRepository briefRepository, SlotRepository slotRepository,
+    public GenerationService(ProjectBriefRepository briefRepository,
+                              DiscoverySessionRepository discoverySessionRepository, SlotRepository slotRepository,
                               GenerationRunRepository generationRunRepository,
                               AgentExecutionRepository agentExecutionRepository, AiServiceClient aiServiceClient,
                               TaskExecutor generationExecutor, RunReportService runReportService,
                               RunReportBroadcaster runReportBroadcaster,
                               CostCircuitBreakerService costCircuitBreakerService,
                               GeneratedDocumentRepository generatedDocumentRepository,
-                              PackagerService packagerService) {
+                              PackagerService packagerService, CreditService creditService) {
         this.briefRepository = briefRepository;
+        this.discoverySessionRepository = discoverySessionRepository;
         this.slotRepository = slotRepository;
         this.generationRunRepository = generationRunRepository;
         this.agentExecutionRepository = agentExecutionRepository;
@@ -59,20 +74,23 @@ public class GenerationService {
         this.costCircuitBreakerService = costCircuitBreakerService;
         this.generatedDocumentRepository = generatedDocumentRepository;
         this.packagerService = packagerService;
+        this.creditService = creditService;
     }
 
     /**
-     * Validates preconditions and creates the {@link GenerationRun} row
-     * synchronously (so a caller gets an immediate, honest error for a
-     * missing brief/scale tier), then hands the actual multi-minute
-     * specialist-roster call off to {@link #generationExecutor} and returns
-     * the run id right away - the caller no longer blocks for the whole run.
-     * Watch progress via the run's SSE endpoint or by polling its status.
+     * Validates preconditions, verifies {@code requestingUserId} actually
+     * owns {@code sessionId} (they're the one about to be charged), and
+     * pre-authorizes the flat {@link #FULL_BLUEPRINT_CREDITS} charge before
+     * creating the {@link GenerationRun} row - an underfunded account never
+     * gets a dangling IN_PROGRESS run, it gets an {@link InsufficientCreditsException}
+     * (402) synchronously, before any AI-service call. Once charged, the
+     * actual multi-minute specialist-roster call is handed off to
+     * {@link #generationExecutor} and the run id returned right away - the
+     * caller no longer blocks for the whole run. Watch progress via the
+     * run's SSE endpoint or by polling its status.
      */
-    public GenerationRunResult generate(UUID sessionId) {
+    public GenerationRunResult generate(UUID sessionId, UUID requestingUserId) {
         if (costCircuitBreakerService.isKillSwitchActive()) {
-            // Same pre-authorization point credits will eventually be checked at
-            // (Phase 7, spec-v2 §13) - refuses before any AI-service call, not mid-run.
             throw new GenerationBlockedException("Grilld's briefly paused for a check, try again shortly.");
         }
 
@@ -82,15 +100,29 @@ public class GenerationService {
             throw new IllegalStateException(
                     "Session " + sessionId + " has no scale tier yet - calibrate before generating");
         }
+        DiscoverySession session = discoverySessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("No session " + sessionId));
+        if (!session.getUserId().equals(requestingUserId)) {
+            throw new AccessDeniedException("Session " + sessionId + " does not belong to the requesting user");
+        }
 
         GenerationRun run = generationRunRepository.save(new GenerationRun(brief.getId()));
+        try {
+            creditService.deductForRun(requestingUserId, FULL_BLUEPRINT_CREDITS, run.getId(),
+                    "GENERATION_RUN:" + run.getId());
+        } catch (InsufficientCreditsException e) {
+            generationRunRepository.delete(run);
+            throw e;
+        }
+        run.chargeCredits(FULL_BLUEPRINT_CREDITS);
+        generationRunRepository.save(run);
 
         List<String> unresolvedSlotDescriptions = slotRepository.findBySessionIdAndStatus(sessionId, Slot.Status.OPEN)
                 .stream()
                 .map(Slot::getDescription)
                 .toList();
 
-        generationExecutor.execute(() -> runGeneration(run.getId(), brief, unresolvedSlotDescriptions));
+        generationExecutor.execute(() -> runGeneration(run.getId(), requestingUserId, brief, unresolvedSlotDescriptions));
 
         return new GenerationRunResult(run.getId(), run.getStatus().name(), Map.of());
     }
@@ -109,13 +141,17 @@ public class GenerationService {
     public void resumeStaleRun(GenerationRun run) {
         ProjectBrief brief = briefRepository.findById(run.getBriefId())
                 .orElseThrow(() -> new ResourceNotFoundException("No brief for run " + run.getId()));
+        // No re-deduction here: this run was already charged once, in generate(),
+        // when it was first created - resuming just re-dispatches the same call.
+        DiscoverySession session = discoverySessionRepository.findById(brief.getSessionId())
+                .orElseThrow(() -> new ResourceNotFoundException("No session for brief " + brief.getId()));
         List<String> unresolvedSlotDescriptions = slotRepository
                 .findBySessionIdAndStatus(brief.getSessionId(), Slot.Status.OPEN)
                 .stream()
                 .map(Slot::getDescription)
                 .toList();
 
-        generationExecutor.execute(() -> runGeneration(run.getId(), brief, unresolvedSlotDescriptions));
+        generationExecutor.execute(() -> runGeneration(run.getId(), session.getUserId(), brief, unresolvedSlotDescriptions));
     }
 
     // Runs off the request thread (see generate()). Deliberately NOT
@@ -125,7 +161,7 @@ public class GenerationService {
     // committed independently, so a partially-completed run's rows survive
     // even if a later step fails. Holding one big transaction open across a
     // multi-minute streamed call would be wrong regardless of the failure path.
-    private void runGeneration(UUID runId, ProjectBrief brief, List<String> unresolvedSlotDescriptions) {
+    private void runGeneration(UUID runId, UUID userId, ProjectBrief brief, List<String> unresolvedSlotDescriptions) {
         // Assemble once up front so a client that subscribes right after generate()
         // returns sees "brief finalized" + the full queued roster immediately,
         // not a blank report until the first specialist starts.
@@ -153,6 +189,11 @@ public class GenerationService {
             run.markFailed(e.getMessage());
             generationRunRepository.save(run);
             runReportBroadcaster.publish(runId, run);
+            // FAILED is terminal (GenerationResumeSweep only re-triggers IN_PROGRESS
+            // rows), so this can only run once per run - no double-refund risk.
+            if (run.getCreditsCharged() > 0) {
+                creditService.refundForRun(userId, run.getCreditsCharged(), runId, "GENERATION_RUN_REFUND:" + runId);
+            }
         }
     }
 

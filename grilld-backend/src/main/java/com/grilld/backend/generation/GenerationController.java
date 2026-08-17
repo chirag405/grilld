@@ -1,5 +1,7 @@
 package com.grilld.backend.generation;
 
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,8 +28,14 @@ public class GenerationController {
         this.generationService = generationService;
     }
 
+    /**
+     * The JWT subject (Phase 7) is who gets charged and whose ownership of
+     * {@code sessionId} gets checked - see GenerationService.generate.
+     */
     @PostMapping("/{sessionId}/generate")
-    public GenerationService.GenerationRunResult generate(@PathVariable UUID sessionId) {
-        return generationService.generate(sessionId);
+    public GenerationService.GenerationRunResult generate(@AuthenticationPrincipal Jwt jwt,
+                                                            @PathVariable UUID sessionId) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        return generationService.generate(sessionId, userId);
     }
 }

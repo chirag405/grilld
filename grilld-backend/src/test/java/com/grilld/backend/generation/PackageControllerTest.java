@@ -111,7 +111,7 @@ class PackageControllerTest {
                     return new GenerationResult(Map.of("/docs/MARKET_ANALYSIS.md", "market content"));
                 });
 
-        GenerationService.GenerationRunResult result = generationService.generate(started.sessionId());
+        GenerationService.GenerationRunResult result = generationService.generate(started.sessionId(), user.getId());
 
         String statusBody = mockMvc.perform(get("/api/v1/sessions/{sessionId}/runs/{runId}/package",
                         started.sessionId(), result.runId())

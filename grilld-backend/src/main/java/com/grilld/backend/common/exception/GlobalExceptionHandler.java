@@ -44,6 +44,11 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(InsufficientCreditsException.class)
+    public ResponseEntity<ErrorResponse> handleInsufficientCredits(InsufficientCreditsException ex, HttpServletRequest request) {
+        return respond(HttpStatus.PAYMENT_REQUIRED, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
         return respond(HttpStatus.BAD_REQUEST, ex.getMessage(), request);

@@ -15,8 +15,11 @@ import java.util.UUID;
 /**
  * One row of `generation_runs` - one attempt at turning a finalized brief
  * into the full blueprint package (docs/product-and-architecture.md §5),
- * via the specialist roster (Phase 5). `creditsCharged` is a placeholder
- * (always 0) until billing exists (Phase 7) - not real charging yet.
+ * via the specialist roster (Phase 5). `creditsCharged` is set once, by
+ * {@link #chargeCredits(int)}, right after CreditService's atomic deduction
+ * succeeds (Phase 7) - it's the row's own record of what it actually cost,
+ * independent of credit_transactions (which is the audit trail, this is the
+ * run's own denormalized copy for cheap display).
  */
 @Entity
 @Table(name = "generation_runs")
@@ -66,6 +69,11 @@ public class GenerationRun {
      * agent_executions change via RunReportService, not just at the end.
      * Does not touch status/completedAt.
      */
+    public void chargeCredits(int amount) {
+        this.creditsCharged = amount;
+        this.updatedAt = Instant.now();
+    }
+
     public void updateRunReport(String runReportMd) {
         this.runReportMd = runReportMd;
         this.updatedAt = Instant.now();
@@ -90,6 +98,10 @@ public class GenerationRun {
 
     public UUID getBriefId() {
         return briefId;
+    }
+
+    public int getCreditsCharged() {
+        return creditsCharged;
     }
 
     public Status getStatus() {

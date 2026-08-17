@@ -5,10 +5,15 @@ import com.grilld.backend.aiservice.GenerationProgressEvent;
 import com.grilld.backend.aiservice.GenerationResult;
 import com.grilld.backend.aiservice.InterrogatorTurnResult;
 import com.grilld.backend.aiservice.ScaleCalibrationResult;
+import com.grilld.backend.billing.CreditService;
+import com.grilld.backend.billing.CreditTransaction;
+import com.grilld.backend.billing.CreditTransactionRepository;
 import com.grilld.backend.brief.ProjectBriefRepository;
 import com.grilld.backend.common.exception.GenerationBlockedException;
+import com.grilld.backend.common.exception.InsufficientCreditsException;
 import com.grilld.backend.session.SessionService;
 import com.grilld.backend.user.User;
+import com.grilld.backend.user.UserRepository;
 import com.grilld.backend.user.UserService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -21,6 +26,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -83,6 +89,15 @@ class GenerationServiceTest {
     @Autowired
     PlatformSettingsRepository platformSettingsRepository;
 
+    @Autowired
+    UserRepository userRepository;
+
+    @Autowired
+    CreditTransactionRepository creditTransactionRepository;
+
+    @Autowired
+    CreditService creditService;
+
     @MockitoBean
     AiServiceClient aiServiceClient;
 
@@ -95,7 +110,10 @@ class GenerationServiceTest {
         }
     }
 
-    private UUID startCalibratedSession(String googleId, String email) {
+    private record CalibratedSession(UUID sessionId, UUID userId) {
+    }
+
+    private CalibratedSession startCalibratedSession(String googleId, String email) {
         User user = userService.findOrCreateFromGoogle(googleId, email);
         InterrogatorTurnResult.NextQuestion question = new InterrogatorTurnResult.NextQuestion(
                 "What's the core problem?", List.of("problem_statement"), "FREE_ELICITATION", "text", "opening");
@@ -106,7 +124,7 @@ class GenerationServiceTest {
         when(aiServiceClient.calibrateScale(ArgumentMatchers.any())).thenReturn(
                 new ScaleCalibrationResult("T1", "solo builder", List.of("solo")));
         sessionService.calibrateScale(started.sessionId());
-        return started.sessionId();
+        return new CalibratedSession(started.sessionId(), user.getId());
     }
 
     /** Stubs a streamed run that fires STARTED then COMPLETED for each (agentName, path, narration) triple. */
@@ -132,7 +150,7 @@ class GenerationServiceTest {
 
     @Test
     void successfulRunPersistsCompletedRunAndAgentExecutionsWithNarration() {
-        var sessionId = startCalibratedSession("gen-success-google-id", "gen-success@example.com");
+        var calibrated = startCalibratedSession("gen-success-google-id", "gen-success@example.com");
 
         Map<String, String> files = new LinkedHashMap<>();
         files.put("/docs/MARKET_ANALYSIS.md", "market content");
@@ -142,7 +160,7 @@ class GenerationServiceTest {
                 new Object[]{"strategy_agent", "/docs/STRATEGY.md", "Positioned around the go-to-market gap found."}
         ), files);
 
-        GenerationService.GenerationRunResult result = generationService.generate(sessionId);
+        GenerationService.GenerationRunResult result = generationService.generate(calibrated.sessionId(), calibrated.userId());
 
         // generate() itself only returns the immediate handle (IN_PROGRESS, no
         // files yet) - the SyncTaskExecutor override means the run has already
@@ -161,11 +179,20 @@ class GenerationServiceTest {
                 .filter(e -> e.getAgentName().equals("market_analyst")).findFirst().orElseThrow();
         assertEquals(AgentExecution.Status.COMPLETED, marketExecution.getStatus());
         assertEquals("/docs/MARKET_ANALYSIS.md", marketExecution.getOutputRef());
+
+        // Phase 7: a completed run keeps its charge - free signup grant (60) minus
+        // the flat full-blueprint cost (50, GenerationService.FULL_BLUEPRINT_CREDITS).
+        assertEquals(GenerationService.FULL_BLUEPRINT_CREDITS, run.getCreditsCharged());
+        User reloadedUser = userRepository.findById(calibrated.userId()).orElseThrow();
+        assertEquals(60 - GenerationService.FULL_BLUEPRINT_CREDITS, reloadedUser.getCreditsBalance());
+        assertTrue(creditTransactionRepository.findByUserIdOrderByCreatedAtDesc(calibrated.userId()).stream()
+                        .anyMatch(t -> t.getRunId() != null && t.getRunId().equals(result.runId()) && t.getDelta() == -50),
+                "expected a -50 credit_transactions row for this run - the audit trail, not just the balance");
     }
 
     @Test
     void aiServiceFailureMarksRunFailedRatherThanLeavingItInProgress() {
-        var sessionId = startCalibratedSession("gen-failure-google-id", "gen-failure@example.com");
+        var calibrated = startCalibratedSession("gen-failure-google-id", "gen-failure@example.com");
 
         when(aiServiceClient.generateBlueprint(
                 ArgumentMatchers.any(), ArgumentMatchers.any(), ArgumentMatchers.any(),
@@ -175,12 +202,21 @@ class GenerationServiceTest {
         // The AI-service exception now happens on the background executor, not on
         // this thread - generate() itself no longer throws (see runGeneration()'s
         // catch); the SyncTaskExecutor override still makes this deterministic.
-        generationService.generate(sessionId);
+        generationService.generate(calibrated.sessionId(), calibrated.userId());
 
         List<GenerationRun> runs = generationRunRepository.findByBriefIdOrderByStartedAtDesc(
-                briefRepository.findBySessionId(sessionId).orElseThrow().getId());
+                briefRepository.findBySessionId(calibrated.sessionId()).orElseThrow().getId());
         assertEquals(1, runs.size());
         assertEquals(GenerationRun.Status.FAILED, runs.get(0).getStatus());
+
+        // Phase 7: a run that never delivered a package shouldn't cost credits -
+        // the pre-authorized charge is refunded once the run lands FAILED.
+        User reloadedUser = userRepository.findById(calibrated.userId()).orElseThrow();
+        assertEquals(60, reloadedUser.getCreditsBalance(), "failed run should refund its pre-authorized charge");
+        List<Integer> deltas = creditTransactionRepository.findByUserIdOrderByCreatedAtDesc(calibrated.userId())
+                .stream().map(CreditTransaction::getDelta).toList();
+        assertTrue(deltas.contains(-50) && deltas.contains(50),
+                "expected both the deduction and refund as separate audit rows, got: " + deltas);
     }
 
     @Test
@@ -190,7 +226,7 @@ class GenerationServiceTest {
         // that was in flight when the error hit stays RUNNING - not silently marked
         // done, not silently dropped. This is exactly what the resume sweep (Phase 6
         // task 4) needs to find.
-        var sessionId = startCalibratedSession("gen-partial-google-id", "gen-partial@example.com");
+        var calibrated = startCalibratedSession("gen-partial-google-id", "gen-partial@example.com");
 
         when(aiServiceClient.generateBlueprint(
                 ArgumentMatchers.any(), ArgumentMatchers.any(), ArgumentMatchers.any(),
@@ -206,9 +242,9 @@ class GenerationServiceTest {
                     throw new RuntimeException("connection dropped mid-stream");
                 });
 
-        generationService.generate(sessionId);
+        generationService.generate(calibrated.sessionId(), calibrated.userId());
 
-        UUID briefId = briefRepository.findBySessionId(sessionId).orElseThrow().getId();
+        UUID briefId = briefRepository.findBySessionId(calibrated.sessionId()).orElseThrow().getId();
         UUID runId = generationRunRepository.findByBriefIdOrderByStartedAtDesc(briefId).get(0).getId();
         List<AgentExecution> executions = agentExecutionRepository.findByRunId(runId);
 
@@ -225,11 +261,11 @@ class GenerationServiceTest {
         // extracted yet, so this proves the "everything unresolved lands in
         // ASSUMPTIONS.md" wiring (product-and-architecture.md §7) actually reaches
         // the AI service, not just that the field exists.
-        var sessionId = startCalibratedSession("gen-unresolved-google-id", "gen-unresolved@example.com");
+        var calibrated = startCalibratedSession("gen-unresolved-google-id", "gen-unresolved@example.com");
 
         stubStreamedRun(List.of(), Map.of());
 
-        generationService.generate(sessionId);
+        generationService.generate(calibrated.sessionId(), calibrated.userId());
 
         ArgumentCaptor<List<String>> unresolvedCaptor = ArgumentCaptor.forClass(List.class);
         verify(aiServiceClient).generateBlueprint(
@@ -249,21 +285,55 @@ class GenerationServiceTest {
                 new InterrogatorTurnResult(List.of(), List.of(), List.of(), question, false));
         SessionService.SessionStartResult started = sessionService.startSession(user.getId(), "a scheduling tool");
 
-        assertThrows(IllegalStateException.class, () -> generationService.generate(started.sessionId()));
+        assertThrows(IllegalStateException.class,
+                () -> generationService.generate(started.sessionId(), user.getId()));
     }
 
     @Test
     void generateRefusesToStartWhileTheCostKillSwitchIsActive() {
-        var sessionId = startCalibratedSession("gen-killswitch-google-id", "gen-killswitch@example.com");
+        var calibrated = startCalibratedSession("gen-killswitch-google-id", "gen-killswitch@example.com");
 
         PlatformSetting killSwitch = platformSettingsRepository.findById("kill_switch_active").orElseThrow();
         killSwitch.updateValue("true");
         platformSettingsRepository.save(killSwitch);
         try {
-            assertThrows(GenerationBlockedException.class, () -> generationService.generate(sessionId));
+            assertThrows(GenerationBlockedException.class,
+                    () -> generationService.generate(calibrated.sessionId(), calibrated.userId()));
         } finally {
             killSwitch.updateValue("false"); // don't poison other tests sharing this context
             platformSettingsRepository.save(killSwitch);
         }
+    }
+
+    @Test
+    void generateRefusesAnotherUsersSession() {
+        var calibrated = startCalibratedSession("gen-owner-google-id", "gen-owner@example.com");
+        User otherUser = userService.findOrCreateFromGoogle("gen-intruder-google-id", "gen-intruder@example.com");
+
+        assertThrows(AccessDeniedException.class,
+                () -> generationService.generate(calibrated.sessionId(), otherUser.getId()));
+
+        assertEquals(0, generationRunRepository.findByBriefIdOrderByStartedAtDesc(
+                        briefRepository.findBySessionId(calibrated.sessionId()).orElseThrow().getId())
+                .size(), "no run row should be created for a rejected ownership check");
+    }
+
+    @Test
+    void generateBlocksAndCreatesNoRunWhenCreditsAreInsufficient() {
+        var calibrated = startCalibratedSession("gen-poor-google-id", "gen-poor@example.com");
+        // Spend the account down below the flat full-blueprint cost via CreditService
+        // itself (not a raw repository call - @Modifying bulk updates need an active
+        // transaction, which only CreditService's @Transactional methods provide),
+        // so this test isolates the pre-auth check.
+        creditService.deductForRun(calibrated.userId(), 55, null, "test-setup-spend");
+
+        assertThrows(InsufficientCreditsException.class,
+                () -> generationService.generate(calibrated.sessionId(), calibrated.userId()));
+
+        assertEquals(5, userRepository.findById(calibrated.userId()).orElseThrow().getCreditsBalance(),
+                "a blocked request must not touch the balance");
+        assertEquals(0, generationRunRepository.findByBriefIdOrderByStartedAtDesc(
+                        briefRepository.findBySessionId(calibrated.sessionId()).orElseThrow().getId())
+                .size(), "a blocked request must not leave a dangling run row");
     }
 }

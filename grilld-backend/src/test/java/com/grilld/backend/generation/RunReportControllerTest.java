@@ -85,7 +85,10 @@ class RunReportControllerTest {
         }
     }
 
-    private UUID startCalibratedSession(String googleId, String email) {
+    private record CalibratedSession(UUID sessionId, UUID userId) {
+    }
+
+    private CalibratedSession startCalibratedSession(String googleId, String email) {
         User user = userService.findOrCreateFromGoogle(googleId, email);
         InterrogatorTurnResult.NextQuestion question = new InterrogatorTurnResult.NextQuestion(
                 "What's the core problem?", List.of("problem_statement"), "FREE_ELICITATION", "text", "opening");
@@ -96,7 +99,7 @@ class RunReportControllerTest {
         when(aiServiceClient.calibrateScale(ArgumentMatchers.any())).thenReturn(
                 new ScaleCalibrationResult("T1", "solo builder", List.of("solo")));
         sessionService.calibrateScale(started.sessionId());
-        return started.sessionId();
+        return new CalibratedSession(started.sessionId(), user.getId());
     }
 
     @SuppressWarnings("unchecked")
@@ -117,13 +120,13 @@ class RunReportControllerTest {
 
     @Test
     void reportEndpointReturnsThePersistedRunReportOverRealHttp() throws Exception {
-        var sessionId = startCalibratedSession("run-report-poll-google-id", "run-report-poll@example.com");
+        var calibrated = startCalibratedSession("run-report-poll-google-id", "run-report-poll@example.com");
         String token = tokenService.issueFor(userService.findOrCreateFromGoogle(
                 "run-report-poll-google-id", "run-report-poll@example.com"));
         stubOneAgentRun();
-        GenerationService.GenerationRunResult result = generationService.generate(sessionId);
+        GenerationService.GenerationRunResult result = generationService.generate(calibrated.sessionId(), calibrated.userId());
 
-        String body = mockMvc.perform(get("/api/v1/sessions/{sessionId}/runs/{runId}/report", sessionId, result.runId())
+        String body = mockMvc.perform(get("/api/v1/sessions/{sessionId}/runs/{runId}/report", calibrated.sessionId(), result.runId())
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
@@ -137,15 +140,15 @@ class RunReportControllerTest {
 
     @Test
     void eventsEndpointStreamsTheFinalStateAndCloses() throws Exception {
-        var sessionId = startCalibratedSession("run-report-sse-google-id", "run-report-sse@example.com");
+        var calibrated = startCalibratedSession("run-report-sse-google-id", "run-report-sse@example.com");
         String token = tokenService.issueFor(userService.findOrCreateFromGoogle(
                 "run-report-sse-google-id", "run-report-sse@example.com"));
         stubOneAgentRun();
-        GenerationService.GenerationRunResult result = generationService.generate(sessionId);
+        GenerationService.GenerationRunResult result = generationService.generate(calibrated.sessionId(), calibrated.userId());
 
         // The run already finished (SyncTaskExecutor), so subscribing now should get
         // exactly one "report" SSE frame with the final state, then the stream closes.
-        MvcResult mvcResult = mockMvc.perform(get("/api/v1/sessions/{sessionId}/runs/{runId}/events", sessionId, result.runId())
+        MvcResult mvcResult = mockMvc.perform(get("/api/v1/sessions/{sessionId}/runs/{runId}/events", calibrated.sessionId(), result.runId())
                         .header("Authorization", "Bearer " + token))
                 .andReturn();
 
