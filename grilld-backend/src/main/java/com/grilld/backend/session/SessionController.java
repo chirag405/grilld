@@ -18,6 +18,11 @@ import java.util.UUID;
  * questions one at a time. Exercises the full Phase 2 pipeline end to end -
  * WorkingContextAssembler -> AiServiceClient (the stub, until Phase 3) ->
  * persistence - even though the AI side is canned for now.
+ * <p>
+ * Every {@code sessionId}-scoped endpoint below calls
+ * {@link SessionService#verifyOwnership} first (Phase 8 hardening) - before
+ * that, any authenticated user could read or mutate any other user's
+ * session just by knowing its id.
  */
 @RestController
 @RequestMapping("/api/v1/sessions")
@@ -37,23 +42,28 @@ public class SessionController {
     }
 
     @PostMapping("/{sessionId}/answer")
-    public SessionService.TurnAnswerResult answer(@PathVariable UUID sessionId,
+    public SessionService.TurnAnswerResult answer(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId,
                                                     @Valid @RequestBody SubmitAnswerRequest request) {
+        sessionService.verifyOwnership(sessionId, UUID.fromString(jwt.getSubject()));
         return sessionService.submitAnswer(sessionId, request.answerText());
     }
 
     @PostMapping("/{sessionId}/scale-tier")
-    public ScaleCalibrationResult calibrateScale(@PathVariable UUID sessionId) {
+    public ScaleCalibrationResult calibrateScale(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
+        sessionService.verifyOwnership(sessionId, UUID.fromString(jwt.getSubject()));
         return sessionService.calibrateScale(sessionId);
     }
 
     @PostMapping("/{sessionId}/force-conclude")
-    public void forceConclude(@PathVariable UUID sessionId) {
+    public void forceConclude(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
+        sessionService.verifyOwnership(sessionId, UUID.fromString(jwt.getSubject()));
         sessionService.forceConclude(sessionId);
     }
 
     @PutMapping("/{sessionId}/scale-tier")
-    public void overrideScaleTier(@PathVariable UUID sessionId, @Valid @RequestBody OverrideScaleTierRequest request) {
+    public void overrideScaleTier(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId,
+                                   @Valid @RequestBody OverrideScaleTierRequest request) {
+        sessionService.verifyOwnership(sessionId, UUID.fromString(jwt.getSubject()));
         sessionService.overrideScaleTier(sessionId, request.tier());
     }
 }

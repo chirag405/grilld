@@ -159,4 +159,18 @@ class RunReportControllerTest {
         assertTrue(body.contains("report"), "expected an SSE 'report' event, got:\n" + body);
         assertTrue(body.contains("COMPLETED"));
     }
+
+    @Test
+    void reportEndpointRejectsAnotherUsersToken() throws Exception {
+        var calibrated = startCalibratedSession("run-report-owner-google-id", "run-report-owner@example.com");
+        stubOneAgentRun();
+        GenerationService.GenerationRunResult result = generationService.generate(calibrated.sessionId(), calibrated.userId());
+
+        String intruderToken = tokenService.issueFor(
+                userService.findOrCreateFromGoogle("run-report-intruder-google-id", "run-report-intruder@example.com"));
+
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/runs/{runId}/report", calibrated.sessionId(), result.runId())
+                        .header("Authorization", "Bearer " + intruderToken))
+                .andExpect(status().isForbidden());
+    }
 }

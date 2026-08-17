@@ -133,5 +133,12 @@ class PackageControllerTest {
             assertEquals("docs/MARKET_ANALYSIS.md", entry.getName());
             assertEquals("market content", new String(zip.readAllBytes()));
         }
+
+        String intruderToken = tokenService.issueFor(
+                userService.findOrCreateFromGoogle("package-intruder-google-id", "package-intruder@example.com"));
+        mockMvc.perform(get("/api/v1/sessions/{sessionId}/runs/{runId}/package/download",
+                        started.sessionId(), result.runId())
+                        .header("Authorization", "Bearer " + intruderToken))
+                .andExpect(status().isForbidden());
     }
 }

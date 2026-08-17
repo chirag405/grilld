@@ -100,6 +100,28 @@ class SessionFlowIntegrationTest {
         assertTrue(concluded, "interview should conclude after the stub's configured turn count");
     }
 
+    @Test
+    void answerEndpointRejectsAnotherUsersToken() throws Exception {
+        User owner = userService.findOrCreateFromGoogle("session-owner-google-sub", "session-owner@example.com");
+        String ownerToken = tokenService.issueFor(owner);
+        String startResponse = mockMvc.perform(post("/api/v1/sessions")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType("application/json")
+                        .content("{\"rawIdea\":\"a tool for freelancers to track unpaid invoices\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID sessionId = UUID.fromString(JsonPath.read(startResponse, "$.sessionId"));
+
+        User intruder = userService.findOrCreateFromGoogle("session-intruder-google-sub", "session-intruder@example.com");
+        String intruderToken = tokenService.issueFor(intruder);
+
+        mockMvc.perform(post("/api/v1/sessions/" + sessionId + "/answer")
+                        .header("Authorization", "Bearer " + intruderToken)
+                        .contentType("application/json")
+                        .content("{\"answerText\":\"not yours to answer\"}"))
+                .andExpect(status().isForbidden());
+    }
+
     private String answer(UUID sessionId, String token, String answerText) throws Exception {
         return mockMvc.perform(post("/api/v1/sessions/" + sessionId + "/answer")
                         .header("Authorization", "Bearer " + token)

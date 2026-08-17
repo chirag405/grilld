@@ -16,6 +16,7 @@ import com.grilld.backend.slot.RubricEvaluation;
 import com.grilld.backend.slot.RubricEvaluationRepository;
 import com.grilld.backend.slot.Slot;
 import com.grilld.backend.slot.SlotRepository;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,6 +58,25 @@ public class SessionService {
         this.aiServiceClient = aiServiceClient;
         this.objectMapper = objectMapper;
         this.revisionClassifier = revisionClassifier;
+    }
+
+    /**
+     * The ownership check every session-scoped controller endpoint runs
+     * before touching a session - added in Phase 8's hardening pass once
+     * GenerationController.generate()'s equivalent check (Phase 7 task 1)
+     * made it obvious the rest of this API surface never verified a caller
+     * actually owned the {@code sessionId} in the URL. Deliberately a thin
+     * controller-facing method, not a parameter threaded through every
+     * existing SessionService method - see LEARNING.md's Phase 8 note for
+     * why that would have been a much larger, riskier change for the same
+     * security guarantee.
+     */
+    public void verifyOwnership(UUID sessionId, UUID requestingUserId) {
+        DiscoverySession session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("No session " + sessionId));
+        if (!session.getUserId().equals(requestingUserId)) {
+            throw new AccessDeniedException("Session " + sessionId + " does not belong to the requesting user");
+        }
     }
 
     @Transactional

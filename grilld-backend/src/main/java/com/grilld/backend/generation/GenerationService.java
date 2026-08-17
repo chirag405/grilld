@@ -138,6 +138,23 @@ public class GenerationService {
      * run status first, since langgraph dev's status bookkeeping is itself
      * in-memory/ephemeral right now (see LEARNING.md's Phase 6 task 4 note).
      */
+    /**
+     * Resolves who owns a run - runId -> brief -> session -> userId - so
+     * RunReportController and PackageController can verify a caller before
+     * handing back a Run Report or a package download (Phase 8 hardening;
+     * see SessionService.verifyOwnership's Javadoc for the matching gap on
+     * the session side).
+     */
+    public UUID resolveOwningUserId(UUID runId) {
+        GenerationRun run = generationRunRepository.findById(runId)
+                .orElseThrow(() -> new ResourceNotFoundException("No generation run " + runId));
+        ProjectBrief brief = briefRepository.findById(run.getBriefId())
+                .orElseThrow(() -> new ResourceNotFoundException("No brief for run " + runId));
+        DiscoverySession session = discoverySessionRepository.findById(brief.getSessionId())
+                .orElseThrow(() -> new ResourceNotFoundException("No session for run " + runId));
+        return session.getUserId();
+    }
+
     public void resumeStaleRun(GenerationRun run) {
         ProjectBrief brief = briefRepository.findById(run.getBriefId())
                 .orElseThrow(() -> new ResourceNotFoundException("No brief for run " + run.getId()));

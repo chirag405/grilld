@@ -2,6 +2,9 @@ package com.grilld.backend.generation;
 
 import com.grilld.backend.common.exception.ResourceNotFoundException;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,24 +26,36 @@ public class RunReportController {
 
     private final GenerationRunRepository generationRunRepository;
     private final RunReportBroadcaster broadcaster;
+    private final GenerationService generationService;
 
-    public RunReportController(GenerationRunRepository generationRunRepository, RunReportBroadcaster broadcaster) {
+    public RunReportController(GenerationRunRepository generationRunRepository, RunReportBroadcaster broadcaster,
+                                GenerationService generationService) {
         this.generationRunRepository = generationRunRepository;
         this.broadcaster = broadcaster;
+        this.generationService = generationService;
     }
 
     @GetMapping("/report")
-    public RunReportUpdate report(@PathVariable UUID runId) {
+    public RunReportUpdate report(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID runId) {
+        verifyOwnership(runId, jwt);
         GenerationRun run = findRun(runId);
         return new RunReportUpdate(run.getStatus().name(), run.getRunReportMd(), run.getFailureReason());
     }
 
     @GetMapping(path = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter events(@PathVariable UUID runId) {
+    public SseEmitter events(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID runId) {
+        verifyOwnership(runId, jwt);
         GenerationRun run = findRun(runId);
         SseEmitter emitter = broadcaster.subscribe(runId);
         broadcaster.sendCurrentState(emitter, run);
         return emitter;
+    }
+
+    private void verifyOwnership(UUID runId, Jwt jwt) {
+        UUID owningUserId = generationService.resolveOwningUserId(runId);
+        if (!owningUserId.equals(UUID.fromString(jwt.getSubject()))) {
+            throw new AccessDeniedException("Run " + runId + " does not belong to the requesting user");
+        }
     }
 
     private GenerationRun findRun(UUID runId) {
