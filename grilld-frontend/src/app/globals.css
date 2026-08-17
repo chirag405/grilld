@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@theme {
+  /* Blueprint / drafting-table palette - see LEARNING.md's Phase 9 design note.
+     Paper + ink + cyanotype blue + a rust "heat" accent (the grilling metaphor,
+     literalized without leaning on the black+neon cliché). */
+  --color-paper: #f7f5f0;
+  --color-paper-line: #e4ded0;
+  --color-ink: #14213d;
+  --color-ink-soft: #4a5578;
+  --color-blueprint: #0b3d91;
+  --color-blueprint-line: #7fa8d9;
+  --color-blueprint-deep: #082a66;
+  --color-rust: #e8590c;
+  --color-rust-soft: #f3894d;
+  --color-ok: #2f9e44;
+  --color-warn: #f08c00;
+  --color-danger: #c92a2a;
+
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", monospace;
+
+  --animate-fade-up: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
+
+/* A faint cyanotype grid, the recurring texture of every "blueprint sheet"
+   surface (title blocks, the slot rail, the Run Report canvas) - see the
+   .blueprint-sheet utility used across those components. */
+.blueprint-sheet {
+  background-image:
+    linear-gradient(var(--color-paper-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-paper-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-color: var(--color-paper);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
