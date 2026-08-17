@@ -43,7 +43,11 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/oauth2/**",
-                                "/login/**"
+                                "/login/**",
+                                // Lemon Squeezy calls this server-to-server, with no JWT - its own
+                                // HMAC signature (LemonSqueezySignatureVerifier) is the real auth
+                                // check here, done inside the controller, not this filter chain.
+                                "/api/v1/billing/webhooks/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
