@@ -22,18 +22,20 @@ import static org.mockito.Mockito.when;
  * A plain Mockito unit test (no Spring context, no database) - deliberately
  * isolated from real UserService/TokenService so it exercises exactly what
  * this class is responsible for: extracting the right fields from Google's
- * OAuth2User and writing the right response. This does NOT test the OAuth2
- * redirect handshake itself (that needs real Google credentials - see
- * docs/phases/phase-1/TESTING.md's manual checklist), only the code that runs
- * after Spring Security has already confirmed the login succeeded.
+ * OAuth2User and redirecting to the frontend's callback route with the
+ * token attached. This does NOT test the OAuth2 redirect handshake itself
+ * (that needs real Google credentials - see docs/phases/phase-1/TESTING.md's
+ * manual checklist), only the code that runs after Spring Security has
+ * already confirmed the login succeeded.
  */
 class OAuth2LoginSuccessHandlerTest {
 
     @Test
-    void extractsGoogleIdAndEmailAndWritesTokenAsJson() throws Exception {
+    void extractsGoogleIdAndEmailAndRedirectsToTheFrontendWithTheToken() throws Exception {
         UserService userService = mock(UserService.class);
         TokenService tokenService = mock(TokenService.class);
-        OAuth2LoginSuccessHandler handler = new OAuth2LoginSuccessHandler(userService, tokenService);
+        OAuth2LoginSuccessHandler handler =
+                new OAuth2LoginSuccessHandler(userService, tokenService, "http://localhost:3000");
 
         User user = new User("person@example.com", "google-sub-123");
         when(userService.findOrCreateFromGoogle("google-sub-123", "person@example.com")).thenReturn(user);
@@ -53,7 +55,6 @@ class OAuth2LoginSuccessHandlerTest {
         verify(userService).findOrCreateFromGoogle(eq("google-sub-123"), eq("person@example.com"));
         verify(tokenService).issueFor(user);
 
-        assertEquals("application/json;charset=UTF-8", response.getContentType());
-        assertEquals("{\"token\":\"fake.jwt.token\"}", response.getContentAsString());
+        assertEquals("http://localhost:3000/auth/callback?token=fake.jwt.token", response.getRedirectedUrl());
     }
 }

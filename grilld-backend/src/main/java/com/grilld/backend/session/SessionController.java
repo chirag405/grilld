@@ -4,6 +4,7 @@ import com.grilld.backend.aiservice.ScaleCalibrationResult;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -39,6 +40,11 @@ public class SessionController {
                                                      @Valid @RequestBody StartSessionRequest request) {
         UUID userId = UUID.fromString(jwt.getSubject());
         return sessionService.startSession(userId, request.rawIdea());
+    }
+
+    @GetMapping("/{sessionId}")
+    public SessionService.SessionDetail detail(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
+        return sessionService.getSessionDetail(sessionId, UUID.fromString(jwt.getSubject()));
     }
 
     @PostMapping("/{sessionId}/answer")

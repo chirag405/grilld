@@ -4,10 +4,12 @@ import com.grilld.backend.user.User;
 import com.grilld.backend.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
 
@@ -16,19 +18,25 @@ import java.io.IOException;
  * From here on the OAuth2 handshake is done and irrelevant - we look the
  * person up (or create them) in our own `users` table and hand back our own
  * JWT, which is what every subsequent API call actually authenticates with.
- *
- * Returns the token as plain JSON for now rather than redirecting to a
- * frontend callback URL, since the frontend doesn't exist yet (Phase 9).
+ * <p>
+ * Redirects to the frontend's own callback route with the token as a query
+ * parameter (Phase 9) - the frontend's Route Handler at that path is what
+ * turns it into an httpOnly cookie; this class never sets a cookie itself,
+ * since the frontend and backend are different origins in local dev and the
+ * frontend is the one that needs to read the token to store it.
  */
 @Component
 public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
 
     private final UserService userService;
     private final TokenService tokenService;
+    private final String frontendBaseUrl;
 
-    public OAuth2LoginSuccessHandler(UserService userService, TokenService tokenService) {
+    public OAuth2LoginSuccessHandler(UserService userService, TokenService tokenService,
+                                      @Value("${grilld.frontend.base-url}") String frontendBaseUrl) {
         this.userService = userService;
         this.tokenService = tokenService;
+        this.frontendBaseUrl = frontendBaseUrl;
     }
 
     @Override
@@ -41,10 +49,11 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
         User user = userService.findOrCreateFromGoogle(googleId, email);
         String token = tokenService.issueFor(user);
 
-        // A JWT is only base64url characters and dots - never quotes/backslashes -
-        // so it's always safe to embed directly without a JSON library.
-        response.setContentType("application/json");
-        response.setCharacterEncoding("UTF-8");
-        response.getWriter().write("{\"token\":\"" + token + "\"}");
+        String redirectUrl = UriComponentsBuilder.fromUriString(frontendBaseUrl)
+                .path("/auth/callback")
+                .queryParam("token", token)
+                .build()
+                .toUriString();
+        response.sendRedirect(redirectUrl);
     }
 }

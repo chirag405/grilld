@@ -93,7 +93,8 @@ public class SessionService {
         }
 
         Turn firstTurn = createTurnFromQuestion(session.getId(), 1, result);
-        return new SessionStartResult(session.getId(), firstTurn.getQuestionText());
+        InterrogatorTurnResult.NextQuestion question = result.nextQuestion();
+        return new SessionStartResult(session.getId(), firstTurn.getQuestionText(), question.inputMode(), question.whyAsking());
     }
 
     @Transactional
@@ -123,7 +124,7 @@ public class SessionService {
 
         Turn nextTurn = createTurnFromQuestion(sessionId, pendingTurn.getTurnNumber() + 1, result);
         session.touch();
-        return TurnAnswerResult.nextQuestion(nextTurn.getQuestionText());
+        return TurnAnswerResult.nextQuestion(nextTurn.getQuestionText(), result.nextQuestion());
     }
 
     /**
@@ -172,7 +173,26 @@ public class SessionService {
 
         Turn nextTurn = createTurnFromQuestion(sessionId, lastAnsweredTurn.getTurnNumber() + 1, retryResult);
         session.touch();
-        return TurnAnswerResult.nextQuestion(nextTurn.getQuestionText());
+        return TurnAnswerResult.nextQuestion(nextTurn.getQuestionText(), retryResult.nextQuestion());
+    }
+
+    /**
+     * The read side the frontend's live brief panel needs (Phase 9,
+     * product-and-architecture.md §2.2's "magic-moment UX": watching the
+     * brief take shape) - nothing before Phase 9 ever needed to read a
+     * session back, only ever write to it, so this never existed.
+     */
+    public SessionDetail getSessionDetail(UUID sessionId, UUID requestingUserId) {
+        verifyOwnership(sessionId, requestingUserId);
+        DiscoverySession session = sessionRepository.findById(sessionId).orElseThrow();
+        ProjectBrief brief = briefRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("No brief for session " + sessionId));
+        List<SlotView> slots = slotRepository.findBySessionId(sessionId).stream()
+                .map(s -> new SlotView(s.getSlotKey(), s.getDescription(), s.getStatus().name(),
+                        s.getValue(), s.getImportance()))
+                .toList();
+        return new SessionDetail(sessionId, session.getStatus().name(), session.getRawIdea(),
+                brief.getBriefJson(), brief.getScaleTier(), brief.getScaleTierReasoning(), slots);
     }
 
     @Transactional
@@ -356,16 +376,33 @@ public class SessionService {
         }
     }
 
-    public record SessionStartResult(UUID sessionId, String question) {
+    /**
+     * {@code inputMode}/{@code whyAsking} ride along from the Interrogator's own
+     * structured output (InterrogatorTurnResult.NextQuestion) - real fields that
+     * existed since Phase 4 but were dropped on the floor here until Phase 9's
+     * frontend actually needed them to render the chip/free-text hybrid input
+     * and the "why am I being asked this" one-liner (product-and-architecture.md
+     * §2.2). Not persisted on Turn (no why_asking column) - passed straight
+     * through the same request/response cycle instead, since nothing today
+     * needs to re-fetch a past turn's question.
+     */
+    public record SessionStartResult(UUID sessionId, String question, String inputMode, String whyAsking) {
     }
 
-    public record TurnAnswerResult(String question, boolean concluded) {
-        static TurnAnswerResult nextQuestion(String question) {
-            return new TurnAnswerResult(question, false);
+    public record SlotView(String slotKey, String description, String status, String value, int importance) {
+    }
+
+    public record SessionDetail(UUID sessionId, String status, String rawIdea, String briefJson, String scaleTier,
+                                 String scaleTierReasoning, List<SlotView> slots) {
+    }
+
+    public record TurnAnswerResult(String question, boolean concluded, String inputMode, String whyAsking) {
+        static TurnAnswerResult nextQuestion(String question, InterrogatorTurnResult.NextQuestion nextQuestion) {
+            return new TurnAnswerResult(question, false, nextQuestion.inputMode(), nextQuestion.whyAsking());
         }
 
         static TurnAnswerResult markConcluded() {
-            return new TurnAnswerResult(null, true);
+            return new TurnAnswerResult(null, true, null, null);
         }
     }
 }

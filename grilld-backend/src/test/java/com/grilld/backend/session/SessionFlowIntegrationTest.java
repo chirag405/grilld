@@ -22,6 +22,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -72,6 +73,10 @@ class SessionFlowIntegrationTest {
         UUID sessionId = UUID.fromString(JsonPath.read(startResponse, "$.sessionId"));
         String openingQuestion = JsonPath.read(startResponse, "$.question");
         assertTrue(openingQuestion.contains("freelancers to track unpaid invoices"));
+        assertEquals("text", (String) JsonPath.read(startResponse, "$.inputMode"),
+                "the frontend's chip/free-text hybrid input needs inputMode on the wire");
+        assertTrue(((String) JsonPath.read(startResponse, "$.whyAsking")).length() > 0,
+                "the frontend's 'why am I being asked this' one-liner needs whyAsking on the wire");
 
         // Seed slots should exist before any answer is given
         List<Slot> seedSlots = slotRepository.findBySessionId(sessionId);
@@ -98,6 +103,38 @@ class SessionFlowIntegrationTest {
         String finalResponse = answer(sessionId, token, "Whatever you think is best.");
         Boolean concluded = JsonPath.read(finalResponse, "$.concluded");
         assertTrue(concluded, "interview should conclude after the stub's configured turn count");
+    }
+
+    @Test
+    void detailEndpointReturnsTheLiveBriefAndSlots() throws Exception {
+        User user = userService.findOrCreateFromGoogle("session-detail-google-sub", "session-detail@example.com");
+        String token = tokenService.issueFor(user);
+
+        String startResponse = mockMvc.perform(post("/api/v1/sessions")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("{\"rawIdea\":\"a marketplace for local tutors\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID sessionId = UUID.fromString(JsonPath.read(startResponse, "$.sessionId"));
+        answer(sessionId, token, "Yes, that's exactly it.");
+
+        String detailResponse = mockMvc.perform(get("/api/v1/sessions/" + sessionId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        assertEquals("ACTIVE", (String) JsonPath.read(detailResponse, "$.status"));
+        assertEquals("a marketplace for local tutors", (String) JsonPath.read(detailResponse, "$.rawIdea"));
+        assertTrue(((String) JsonPath.read(detailResponse, "$.briefJson")).contains("problem_statement"),
+                "the live brief panel needs the up-to-date brief_json, not just a status flag");
+        List<Object> slots = JsonPath.read(detailResponse, "$.slots");
+        assertEquals(9, slots.size(), "8 seed slots + monetization_intent spawned by the first answer");
+
+        User intruder = userService.findOrCreateFromGoogle("session-detail-intruder-sub", "session-detail-intruder@example.com");
+        String intruderToken = tokenService.issueFor(intruder);
+        mockMvc.perform(get("/api/v1/sessions/" + sessionId).header("Authorization", "Bearer " + intruderToken))
+                .andExpect(status().isForbidden());
     }
 
     @Test
