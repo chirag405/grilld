@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { apiClient, runReportEventsUrl } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +11,15 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Loader } from "@/components/ui/loader";
 import { Markdown } from "@/components/ui/markdown";
 import { SlidingNumber } from "@/components/ui/sliding-number";
+import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ui/reasoning";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   ApiError,
   FULL_BLUEPRINT_CREDITS,
@@ -37,6 +47,7 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
   const [pkg, setPkg] = useState<PackageStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [needsCredits, setNeedsCredits] = useState(false);
 
   useEffect(() => {
     apiClient<BillingBalance>("/billing/balance").then(setBalance).catch(() => {});
@@ -106,6 +117,10 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
   }
 
   async function generate() {
+    if (balance && balance.creditsBalance < FULL_BLUEPRINT_CREDITS) {
+      setNeedsCredits(true);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -114,19 +129,15 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
       });
       setRun(result);
     } catch (e) {
-      setError(
-        e instanceof ApiError && e.status === 402
-          ? "Not enough credits for a full blueprint run (needs 50)."
-          : e instanceof ApiError
-            ? e.message
-            : "Couldn't start generation. Try again.",
-      );
+      if (e instanceof ApiError && e.status === 402) {
+        setNeedsCredits(true);
+      } else {
+        setError(e instanceof ApiError ? e.message : "Couldn't start generation. Try again.");
+      }
     } finally {
       setBusy(false);
     }
   }
-
-  const canAfford = balance ? balance.creditsBalance >= FULL_BLUEPRINT_CREDITS : true;
 
   return (
     <Card className="max-w-2xl gap-5">
@@ -152,18 +163,9 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
         )}
 
         {tier && !run && (
-          <div className="flex flex-col gap-2">
-            <Button onClick={generate} disabled={busy || !canAfford} className="self-start">
-              {busy ? "Starting…" : `Generate blueprint (${FULL_BLUEPRINT_CREDITS} credits)`}
-            </Button>
-            {!canAfford && (
-              <Alert variant="destructive">
-                <AlertDescription>
-                  Not enough credits ({balance?.creditsBalance ?? 0}/{FULL_BLUEPRINT_CREDITS}).
-                </AlertDescription>
-              </Alert>
-            )}
-          </div>
+          <Button onClick={generate} disabled={busy} className="self-start">
+            {busy ? "Starting…" : `Generate blueprint (${FULL_BLUEPRINT_CREDITS} credits)`}
+          </Button>
         )}
 
         {error && (
@@ -184,6 +186,25 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
               <Progress value={(report.completedAgents / Math.max(report.totalAgents, 1)) * 100} className="h-1.5 flex-1" />
               <span className="font-mono text-xs text-ink-soft">{report.completedAgents}/{report.totalAgents}</span>
             </div>
+            <p className="text-sm font-medium text-ink">Now: {report.currentStep.replaceAll("_", " ")}</p>
+            <Reasoning open={report.status === "IN_PROGRESS"} isStreaming={report.status === "IN_PROGRESS"}>
+              <ReasoningTrigger className="text-xs text-ink-soft">Document creation steps</ReasoningTrigger>
+              <ReasoningContent contentClassName="mt-3 space-y-2">
+                {report.steps.map((step, index) => (
+                  <div key={step.agentName} className="flex gap-3 text-xs">
+                    <span className="w-5 font-mono text-ink-soft">{index + 1}</span>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-ink">{step.agentName.replaceAll("_", " ")}</span>
+                        <span className="font-mono text-[10px] text-ink-soft">{step.status.toLowerCase()}</span>
+                      </div>
+                      {step.narration && <p className="text-ink-soft">{step.narration}</p>}
+                      {step.documents.length > 0 && <p className="font-mono text-[10px] text-accent-ink">{step.documents.join(", ")}</p>}
+                    </div>
+                  </div>
+                ))}
+              </ReasoningContent>
+            </Reasoning>
             {report.runReportMd ? (
               <Markdown className="prose prose-sm max-h-64 max-w-none overflow-y-auto text-ink prose-headings:text-ink prose-strong:text-ink">
                 {report.runReportMd}
@@ -207,6 +228,28 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
           </Button>
         )}
       </CardContent>
+
+      <Dialog open={needsCredits} onOpenChange={setNeedsCredits}>
+        <DialogContent
+          showCloseButton={false}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+          onPointerDownOutside={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle>You&rsquo;re out of credits</DialogTitle>
+            <DialogDescription>
+              A full blueprint run costs {FULL_BLUEPRINT_CREDITS} credits - you have{" "}
+              {balance?.creditsBalance ?? 0}. Buy a package to keep going; your interview and brief
+              are saved and waiting.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button asChild className="w-full">
+              <Link href="/billing">Go to billing</Link>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
