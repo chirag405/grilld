@@ -19,6 +19,9 @@ import { PromptInput, PromptInputActions, PromptInputTextarea } from "@/componen
 import { Loader } from "@/components/ui/loader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Spotlight } from "@/components/ui/spotlight";
+import { UserMenu } from "@/components/UserMenu";
 import { ApiError, type InputMode, type SessionDetail } from "@/lib/types";
 
 interface StartResponse {
@@ -156,12 +159,27 @@ export default function InterviewPage() {
 
   return (
     <main className="grid h-dvh grid-cols-1 overflow-hidden bg-paper lg:grid-cols-[1fr_360px]">
-      <section className="flex h-full min-h-0 flex-col overflow-hidden">
+      <section className="relative flex h-full min-h-0 flex-col overflow-hidden">
+        <Spotlight className="-top-24 left-1/3 opacity-60" fill="var(--color-accent)" />
         <TopNav />
-        <ChatContainerRoot className="min-h-0 flex-1 px-6 py-10 sm:px-12">
+        <ChatContainerRoot className="relative min-h-0 flex-1 px-6 py-10 sm:px-12">
           <ChatContainerContent className="mx-auto flex w-full max-w-2xl flex-col gap-6">
             {turns.map((turn, i) => (
-              <Message key={i} className={turn.role === "user" ? "justify-end" : "justify-start"}>
+              <Message
+                key={i}
+                className={
+                  turn.role === "user"
+                    ? "animate-fade-up justify-end"
+                    : "animate-fade-up justify-start"
+                }
+              >
+                {turn.role === "assistant" && (
+                  <Avatar className="h-7 w-7 shrink-0">
+                    <AvatarFallback className="bg-accent-soft text-xs font-semibold text-accent-ink">
+                      G
+                    </AvatarFallback>
+                  </Avatar>
+                )}
                 <div className="flex max-w-[85%] flex-col gap-1">
                   <MessageContent
                     markdown={turn.role === "assistant"}
@@ -186,7 +204,12 @@ export default function InterviewPage() {
             ))}
 
             {answering && (
-              <Message className="justify-start">
+              <Message className="animate-fade-up justify-start">
+                <Avatar className="h-7 w-7 shrink-0">
+                  <AvatarFallback className="bg-accent-soft text-xs font-semibold text-accent-ink">
+                    G
+                  </AvatarFallback>
+                </Avatar>
                 <div className="rounded-lg bg-secondary px-3 py-2">
                   <Loader variant="typing" size="sm" />
                 </div>
@@ -282,13 +305,16 @@ function BriefReview({ detail, onConfirm }: { detail: SessionDetail; onConfirm: 
 
 function TopNav() {
   return (
-    <header className="flex items-center justify-between px-2 pt-6 sm:px-4">
+    <header className="flex shrink-0 items-center justify-between border-b border-line/70 bg-paper/80 px-4 py-3 backdrop-blur-sm sm:px-6">
       <Link href="/interview" className="text-sm font-semibold tracking-tight text-ink">
         grilld
       </Link>
-      <Link href="/billing" className="font-mono text-xs uppercase tracking-widest text-ink-soft">
-        billing
-      </Link>
+      <div className="flex items-center gap-4">
+        <Link href="/billing" className="font-mono text-xs uppercase tracking-widest text-ink-soft hover:text-ink">
+          billing
+        </Link>
+        <UserMenu />
+      </div>
     </header>
   );
 }

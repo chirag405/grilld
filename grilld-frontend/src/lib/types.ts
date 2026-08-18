@@ -3,6 +3,14 @@
 
 export type InputMode = "text" | "number" | "chips" | "voice_primary";
 
+export interface UserProfile {
+  id: string;
+  email: string;
+  plan: "FREE" | "STARTER" | "BUILDER" | "PRO" | "TEAM";
+  creditsBalance: number;
+  createdAt: string;
+}
+
 export interface SessionStartResult {
   sessionId: string;
   question: string;

@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { UserMenu } from "@/components/UserMenu";
 import { ApiError, type BillingBalance, type CheckoutUrlResponse, type CreditPackage } from "@/lib/types";
 
 const PACKAGES: { id: CreditPackage; label: string; price: string; credits: number; blurb: string }[] = [
@@ -64,9 +65,12 @@ export default function BillingPage() {
           <Link href="/interview" className="text-lg font-semibold tracking-tight text-ink">
             grilld
           </Link>
-          <Link href="/interview" className="font-mono text-xs uppercase tracking-widest text-ink-soft">
-            back to interview
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/interview" className="font-mono text-xs uppercase tracking-widest text-ink-soft hover:text-ink">
+              back to interview
+            </Link>
+            <UserMenu />
+          </div>
         </header>
 
         <div>
