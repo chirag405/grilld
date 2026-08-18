@@ -119,6 +119,30 @@ export default function InterviewPage() {
     }
   }
 
+  async function finishInterview() {
+    if (!sessionId || answering) return;
+    setAnswering(true);
+    setError(null);
+    try {
+      await apiClient<void>(`/sessions/${sessionId}/force-conclude`, { method: "POST" });
+      setConcluded(true);
+      await refreshDetail(sessionId);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't finish the interview. Try again.");
+    } finally {
+      setAnswering(false);
+    }
+  }
+
+  async function editSlot(slotKey: string, value: string) {
+    if (!sessionId) return;
+    await apiClient<void>(`/sessions/${sessionId}/slots/${encodeURIComponent(slotKey)}`, {
+      method: "PUT",
+      body: JSON.stringify({ value }),
+    });
+    await refreshDetail(sessionId);
+  }
+
   if (!sessionId) {
     return (
       <main className="flex min-h-dvh flex-col bg-paper px-6">
@@ -158,7 +182,7 @@ export default function InterviewPage() {
   const currentInputMode = concluded ? null : inputMode;
 
   return (
-    <main className="grid h-dvh grid-cols-1 overflow-hidden bg-paper lg:grid-cols-[1fr_360px]">
+    <main className="grid h-dvh grid-cols-1 grid-rows-[minmax(0,1fr)] overflow-hidden overscroll-none bg-paper lg:grid-cols-[1fr_360px]">
       <section className="relative flex h-full min-h-0 flex-col overflow-hidden">
         <Spotlight className="-top-24 left-1/3 opacity-60" fill="var(--color-accent)" />
         <TopNav />
@@ -230,7 +254,7 @@ export default function InterviewPage() {
         </ChatContainerRoot>
 
         {currentInputMode && (
-          <div className="mx-auto w-full shrink-0 max-w-2xl px-6 pb-8 sm:px-12">
+          <div className="mx-auto w-full max-w-2xl shrink-0 border-t border-line/70 bg-paper px-6 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 sm:px-12">
             {error && (
               <Alert variant="destructive" className="mb-3">
                 <AlertDescription>{error}</AlertDescription>
@@ -242,18 +266,21 @@ export default function InterviewPage() {
               onSubmit={submitAnswer}
               submitting={answering}
             />
+            <button type="button" onClick={finishInterview} disabled={answering} className="mt-2 text-xs text-ink-soft underline decoration-dotted underline-offset-2 hover:text-ink disabled:pointer-events-none disabled:opacity-50">
+              I have shared enough — finish the brief
+            </button>
           </div>
         )}
       </section>
 
-      <div className="h-full min-h-0 overflow-hidden border-t border-line lg:border-l lg:border-t-0">
+      <div className="hidden h-full min-h-0 overflow-hidden border-l border-line lg:block">
         {detail && (
           <TitleBlockPanel
             project={detail.rawIdea}
             scale={detail.scaleTier ?? "TBD"}
             status={concluded ? "ready for generation" : "in interview"}
           >
-            <SlotList slots={detail.slots} />
+            <SlotList slots={detail.slots} onEdit={editSlot} />
           </TitleBlockPanel>
         )}
       </div>

@@ -17,10 +17,8 @@ const SKIP_PHRASE = "I'd like to skip this question for now.";
  * Renders the right control for the Interrogator's chosen inputMode
  * (interrogation-engine.md §2.2's "hybrid input, decided per question").
  *
- * chipOptions (when the Interrogator actually supplied concrete ones for
- * this specific question) render as toggleable pills - multi-select, since
- * more than one can be true at once ("budget" AND "compliance" as
- * non-negotiables, say) - alongside free text, which always stays
+ * chipOptions render as a single-choice group because the backend contract
+ * requires mutually exclusive answers. Free text always stays
  * available as an override/addition, never replaced by the chips.
  * inputMode="chips" with an empty chipOptions list (the Interrogator
  * couldn't write real options for this question) falls back to plain text -
@@ -48,7 +46,7 @@ export function AnswerForm({
   submitting: boolean;
 }) {
   const [value, setValue] = useState("");
-  const [selectedChips, setSelectedChips] = useState<string[]>([]);
+  const [selectedChip, setSelectedChip] = useState<string | null>(null);
 
   function submit() {
     const trimmed = value.trim();
@@ -61,31 +59,28 @@ export function AnswerForm({
     if (submitting) return;
     onSubmit(SKIP_PHRASE);
     setValue("");
-    setSelectedChips([]);
-  }
-
-  function toggleChip(option: string) {
-    setSelectedChips((current) =>
-      current.includes(option) ? current.filter((o) => o !== option) : [...current, option],
-    );
+    setSelectedChip(null);
   }
 
   function submitChips() {
-    if (submitting || selectedChips.length === 0) return;
-    onSubmit(selectedChips.join(", "));
-    setSelectedChips([]);
+    if (submitting || !selectedChip) return;
+    onSubmit(selectedChip);
+    setSelectedChip(null);
     setValue("");
   }
 
   if (inputMode === "chips" && chipOptions.length > 0) {
     return (
       <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Answer choices">
           {chipOptions.map((option) => (
             <PromptSuggestion
               key={option}
-              variant={selectedChips.includes(option) ? "default" : "outline"}
-              onClick={() => toggleChip(option)}
+              variant={selectedChip === option ? "default" : "outline"}
+              onClick={() => setSelectedChip(option)}
+              disabled={submitting}
+              role="radio"
+              aria-checked={selectedChip === option}
             >
               {option}
             </PromptSuggestion>
@@ -106,11 +101,11 @@ export function AnswerForm({
           </Button>
           {value.trim() ? (
             <Button onClick={submit} disabled={submitting}>
-              {submitting ? "Sending…" : "Answer"}
+              {submitting ? "Answer sent" : "Answer"}
             </Button>
           ) : (
-            <Button onClick={submitChips} disabled={submitting || selectedChips.length === 0}>
-              {submitting ? "Sending…" : "Continue"}
+            <Button onClick={submitChips} disabled={submitting || !selectedChip}>
+              {submitting ? "Answer sent" : "Continue"}
             </Button>
           )}
         </div>
@@ -140,7 +135,7 @@ export function AnswerForm({
           Skip
         </Button>
         <Button type="submit" disabled={submitting || !value.trim()}>
-          {submitting ? "Sending…" : "Answer"}
+          {submitting ? "Answer sent" : "Answer"}
         </Button>
       </form>
     );
@@ -157,7 +152,7 @@ export function AnswerForm({
           Skip
         </Button>
         <Button size="sm" onClick={submit} disabled={submitting || !value.trim()}>
-          {submitting ? "Sending…" : "Answer"}
+          {submitting ? "Answer sent" : "Answer"}
         </Button>
       </PromptInputActions>
     </PromptInput>

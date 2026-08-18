@@ -1,6 +1,11 @@
+"use client";
+
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { SlidingNumber } from "@/components/ui/sliding-number";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { SlotView } from "@/lib/types";
 
 const STATUS_VARIANT: Record<SlotView["status"], { label: string; className: string }> = {
@@ -16,15 +21,18 @@ const STATUS_VARIANT: Record<SlotView["status"], { label: string; className: str
  * "magic-moment UX") - a checklist against the slot graph rather than a
  * chat transcript, since that's what's actually changing turn to turn.
  */
-export function SlotList({ slots }: { slots: SlotView[] }) {
-  const filledCount = slots.filter((s) => s.status === "FILLED" || s.status === "ASSUMED").length;
+export function SlotList({ slots, onEdit }: { slots: SlotView[]; onEdit: (slotKey: string, value: string) => Promise<void> }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const completedCount = slots.filter((s) => s.status !== "OPEN" && s.status !== "BLOCKED").length;
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2 font-mono text-xs text-ink-soft">
-        <SlidingNumber value={filledCount} /> / {slots.length} figured out
+        <SlidingNumber value={completedCount} /> / {slots.length} figured out
       </div>
-      <Progress value={(filledCount / Math.max(slots.length, 1)) * 100} className="h-1.5" />
+      <Progress value={(completedCount / Math.max(slots.length, 1)) * 100} className="h-1.5" />
 
       <ul className="flex flex-col gap-3">
         {slots.map((slot) => {
@@ -43,7 +51,23 @@ export function SlotList({ slots }: { slots: SlotView[] }) {
                   {variant.label}
                 </Badge>
               </div>
-              {slot.value && <p className="font-mono text-xs text-accent-ink">{slot.value}</p>}
+              {editing === slot.slotKey ? (
+                <form className="flex gap-2" onSubmit={async (event) => {
+                  event.preventDefault();
+                  if (!draft.trim()) return;
+                  setSaving(true);
+                  try { await onEdit(slot.slotKey, draft.trim()); setEditing(null); } finally { setSaving(false); }
+                }}>
+                  <Input value={draft} onChange={(event) => setDraft(event.target.value)} className="h-8 text-xs" autoFocus />
+                  <Button size="sm" type="submit" disabled={saving || !draft.trim()}>{saving ? "Saving" : "Save"}</Button>
+                  <Button size="sm" type="button" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+                </form>
+              ) : slot.value ? (
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-mono text-xs text-accent-ink">{slot.value}</p>
+                  <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => { setEditing(slot.slotKey); setDraft(slot.value ?? ""); }}>Edit</Button>
+                </div>
+              ) : null}
             </li>
           );
         })}
