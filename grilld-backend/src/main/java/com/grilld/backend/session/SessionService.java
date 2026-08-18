@@ -94,7 +94,8 @@ public class SessionService {
 
         Turn firstTurn = createTurnFromQuestion(session.getId(), 1, result);
         InterrogatorTurnResult.NextQuestion question = result.nextQuestion();
-        return new SessionStartResult(session.getId(), firstTurn.getQuestionText(), question.inputMode(), question.whyAsking());
+        return new SessionStartResult(session.getId(), firstTurn.getQuestionText(), question.inputMode(),
+                question.whyAsking(), question.chipOptions());
     }
 
     @Transactional
@@ -386,7 +387,8 @@ public class SessionService {
      * through the same request/response cycle instead, since nothing today
      * needs to re-fetch a past turn's question.
      */
-    public record SessionStartResult(UUID sessionId, String question, String inputMode, String whyAsking) {
+    public record SessionStartResult(UUID sessionId, String question, String inputMode, String whyAsking,
+                                      List<String> chipOptions) {
     }
 
     public record SlotView(String slotKey, String description, String status, String value, int importance) {
@@ -396,13 +398,15 @@ public class SessionService {
                                  String scaleTierReasoning, List<SlotView> slots) {
     }
 
-    public record TurnAnswerResult(String question, boolean concluded, String inputMode, String whyAsking) {
+    public record TurnAnswerResult(String question, boolean concluded, String inputMode, String whyAsking,
+                                    List<String> chipOptions) {
         static TurnAnswerResult nextQuestion(String question, InterrogatorTurnResult.NextQuestion nextQuestion) {
-            return new TurnAnswerResult(question, false, nextQuestion.inputMode(), nextQuestion.whyAsking());
+            return new TurnAnswerResult(question, false, nextQuestion.inputMode(), nextQuestion.whyAsking(),
+                    nextQuestion.chipOptions());
         }
 
         static TurnAnswerResult markConcluded() {
-            return new TurnAnswerResult(null, true, null, null);
+            return new TurnAnswerResult(null, true, null, null, List.of());
         }
     }
 }

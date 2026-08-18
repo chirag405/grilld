@@ -49,6 +49,11 @@ class NextQuestion(BaseModel):
     technique: Technique
     input_mode: InputMode
     why_asking: str
+    # Only populated (2-6 entries) when input_mode="chips" - concrete, mutually
+    # exclusive options grounded in what this specific person has actually said,
+    # never generic placeholders. Empty for every other input_mode; the frontend
+    # always offers free text alongside chips as an escape hatch.
+    chip_options: list[str] = Field(default_factory=list)
 
 
 class InterrogatorTurnResult(BaseModel):

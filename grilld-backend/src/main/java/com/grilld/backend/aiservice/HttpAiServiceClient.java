@@ -428,12 +428,14 @@ public class HttpAiServiceClient implements AiServiceClient {
         InterrogatorTurnResult.NextQuestion nextQuestion = null;
         Map<String, Object> questionMap = (Map<String, Object>) turnResult.get("next_question");
         if (questionMap != null) {
+            List<String> chipOptions = (List<String>) questionMap.get("chip_options");
             nextQuestion = new InterrogatorTurnResult.NextQuestion(
                     (String) questionMap.get("text"),
                     (List<String>) questionMap.get("targets_slots"),
                     (String) questionMap.get("technique"),
                     (String) questionMap.get("input_mode"),
-                    (String) questionMap.get("why_asking"));
+                    (String) questionMap.get("why_asking"),
+                    chipOptions == null ? List.of() : chipOptions);
         }
 
         return new InterrogatorTurnResult(extractedFacts, newSlots, waivedSlots, nextQuestion, readyToConclude);

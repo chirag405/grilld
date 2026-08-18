@@ -31,7 +31,15 @@ public record InterrogatorTurnResult(
             List<String> targetsSlots,
             String technique,
             String inputMode,
-            String whyAsking
+            String whyAsking,
+            List<String> chipOptions
     ) {
+        // Existing call sites (tests, mostly) predate chipOptions and don't care about
+        // it - this overload keeps them compiling instead of forcing an empty-list
+        // argument onto every one of them for a field they're not testing.
+        public NextQuestion(String text, List<String> targetsSlots, String technique, String inputMode,
+                             String whyAsking) {
+            this(text, targetsSlots, technique, inputMode, whyAsking, List.of());
+        }
     }
 }
