@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { apiClient } from "@/lib/api-client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -53,13 +52,6 @@ export function UserMenu() {
             <span className="font-mono text-xs text-ink-soft">{profile.creditsBalance} credits</span>
           </div>
         </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem>
-          <Link href="/billing" className="w-full">Billing</Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem>
-          <Link href="/interview" className="w-full">Interview</Link>
-        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <form action="/auth/signout" method="POST">
           <DropdownMenuItem className="text-danger focus:text-danger">

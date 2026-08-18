@@ -44,6 +44,12 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(AiServiceUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleAiServiceUnavailable(AiServiceUnavailableException ex, HttpServletRequest request) {
+        log.warn("AI service call failed on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage(), ex.getCause());
+        return respond(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(InsufficientCreditsException.class)
     public ResponseEntity<ErrorResponse> handleInsufficientCredits(InsufficientCreditsException ex, HttpServletRequest request) {
         return respond(HttpStatus.PAYMENT_REQUIRED, ex.getMessage(), request);

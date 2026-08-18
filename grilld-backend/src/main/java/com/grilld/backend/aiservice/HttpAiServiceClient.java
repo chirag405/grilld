@@ -2,12 +2,14 @@ package com.grilld.backend.aiservice;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.grilld.backend.common.exception.AiServiceUnavailableException;
 import com.grilld.backend.memory.WorkingContext;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -68,12 +70,19 @@ public class HttpAiServiceClient implements AiServiceClient {
 
         Map<String, Object> requestBody = Map.of("assistant_id", "interrogator", "input", input);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> finalState = restClient.post()
-                .uri("/threads/{id}/runs/wait", context.sessionId())
-                .body(requestBody)
-                .retrieve()
-                .body(Map.class);
+        Map<String, Object> finalState;
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> result = restClient.post()
+                    .uri("/threads/{id}/runs/wait", context.sessionId())
+                    .body(requestBody)
+                    .retrieve()
+                    .body(Map.class);
+            finalState = result;
+        } catch (RestClientException e) {
+            throw new AiServiceUnavailableException(
+                    "Grilld's AI service couldn't process that. Try again shortly.", e);
+        }
 
         return parseTurnResult(finalState);
     }
@@ -107,12 +116,19 @@ public class HttpAiServiceClient implements AiServiceClient {
 
         // Stateless run (no thread) - the Rubric Agent has nothing to persist or
         // resume between calls, unlike the Interrogator's per-session thread.
-        @SuppressWarnings("unchecked")
-        Map<String, Object> finalState = restClient.post()
-                .uri("/runs/wait")
-                .body(requestBody)
-                .retrieve()
-                .body(Map.class);
+        Map<String, Object> finalState;
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> result = restClient.post()
+                    .uri("/runs/wait")
+                    .body(requestBody)
+                    .retrieve()
+                    .body(Map.class);
+            finalState = result;
+        } catch (RestClientException e) {
+            throw new AiServiceUnavailableException(
+                    "Grilld's AI service couldn't process that. Try again shortly.", e);
+        }
 
         return parseRubricResult(finalState);
     }
@@ -150,12 +166,19 @@ public class HttpAiServiceClient implements AiServiceClient {
         Map<String, Object> input = Map.of("brief_json", briefJson == null ? "{}" : briefJson);
         Map<String, Object> requestBody = Map.of("assistant_id", "scale_calibrator", "input", input);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> finalState = restClient.post()
-                .uri("/runs/wait")
-                .body(requestBody)
-                .retrieve()
-                .body(Map.class);
+        Map<String, Object> finalState;
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> result = restClient.post()
+                    .uri("/runs/wait")
+                    .body(requestBody)
+                    .retrieve()
+                    .body(Map.class);
+            finalState = result;
+        } catch (RestClientException e) {
+            throw new AiServiceUnavailableException(
+                    "Grilld's AI service couldn't process that. Try again shortly.", e);
+        }
 
         return parseScaleCalibrationResult(finalState);
     }
