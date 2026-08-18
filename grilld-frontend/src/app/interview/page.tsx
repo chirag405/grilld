@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Spotlight } from "@/components/ui/spotlight";
 import { UserMenu } from "@/components/UserMenu";
+import { Logo } from "@/components/Logo";
 import {
   ApiError,
   type InputMode,
@@ -512,8 +513,8 @@ function TopNav({ onBackToConversations }: { onBackToConversations?: () => void 
   return (
     <header className="flex shrink-0 items-center justify-between border-b border-line/70 bg-paper/80 px-4 py-3 backdrop-blur-sm sm:px-6">
       <div className="flex items-center gap-4">
-        <Link href="/interview" className="text-sm font-semibold tracking-tight text-ink">
-          grilld
+        <Link href="/interview">
+          <Logo size="sm" />
         </Link>
         {onBackToConversations && (
           <button

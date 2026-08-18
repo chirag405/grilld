@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { InView } from "@/components/ui/in-view";
 import { Pricing1, type PricingPlan } from "@/components/ui/pricing-1";
 import { AgentPipelineDiagram } from "@/components/AgentPipelineDiagram";
+import { Logo } from "@/components/Logo";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8080";
 const SIGN_IN_URL = `${BACKEND_URL}/oauth2/authorization/google`;
@@ -81,7 +82,7 @@ export default function LandingPage() {
         <Spotlight className="-top-32 left-0 md:-top-20 md:left-40" fill="var(--color-accent)" />
 
         <header className="relative z-10 flex w-full items-center justify-between px-6 sm:px-10">
-          <span className="text-lg font-semibold tracking-tight text-ink">grilld</span>
+          <Logo />
           <span className="font-mono text-xs uppercase tracking-widest text-ink-soft">
             idea &rarr; blueprint
           </span>

@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { UserMenu } from "@/components/UserMenu";
+import { Logo } from "@/components/Logo";
 import { ApiError, type BillingBalance, type CheckoutUrlResponse, type CreditPackage } from "@/lib/types";
 
 const PACKAGES: (PricingPlan & { id: CreditPackage })[] = [
@@ -78,8 +79,8 @@ export default function BillingPage() {
     <main className="min-h-dvh bg-paper px-6 py-10 sm:px-10">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
         <header className="flex items-center justify-between">
-          <Link href="/interview" className="text-lg font-semibold tracking-tight text-ink">
-            grilld
+          <Link href="/interview">
+            <Logo />
           </Link>
           <div className="flex items-center gap-4">
             <Link href="/interview" className="font-mono text-xs uppercase tracking-widest text-ink-soft hover:text-ink">
