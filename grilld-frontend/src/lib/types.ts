@@ -66,6 +66,12 @@ export interface BillingBalance {
   recentTransactions: { delta: number; reason: string; createdAt: string }[];
 }
 
+export type CreditPackage = "STARTER" | "TOPUP";
+
+export interface CheckoutUrlResponse {
+  checkoutUrl: string;
+}
+
 export interface ApiErrorBody {
   timestamp: string;
   status: number;

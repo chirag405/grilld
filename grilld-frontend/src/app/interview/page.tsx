@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { apiClient } from "@/lib/api-client";
 import { TitleBlockPanel } from "@/components/TitleBlockPanel";
 import { SlotList } from "@/components/SlotList";
@@ -105,7 +106,9 @@ export default function InterviewPage() {
 
   if (!sessionId) {
     return (
-      <main className="flex min-h-dvh items-center justify-center bg-paper px-6">
+      <main className="flex min-h-dvh flex-col bg-paper px-6">
+        <TopNav />
+        <div className="flex flex-1 items-center justify-center">
         <div className="flex w-full max-w-xl flex-col gap-5">
           <p className="font-mono text-xs uppercase tracking-[0.3em] text-accent-ink">start here</p>
           <h1 className="text-3xl font-semibold text-ink">What are you building?</h1>
@@ -132,6 +135,7 @@ export default function InterviewPage() {
             </Alert>
           )}
         </div>
+        </div>
       </main>
     );
   }
@@ -141,6 +145,7 @@ export default function InterviewPage() {
   return (
     <main className="grid min-h-dvh grid-cols-1 bg-paper lg:grid-cols-[1fr_360px]">
       <section className="flex min-h-dvh flex-col">
+        <TopNav />
         <ChatContainerRoot className="flex-1 px-6 py-10 sm:px-12">
           <ChatContainerContent className="mx-auto flex w-full max-w-2xl flex-col gap-6">
             {turns.map((turn, i) => (
@@ -203,5 +208,18 @@ export default function InterviewPage() {
         )}
       </div>
     </main>
+  );
+}
+
+function TopNav() {
+  return (
+    <header className="flex items-center justify-between px-2 pt-6 sm:px-4">
+      <Link href="/interview" className="text-sm font-semibold tracking-tight text-ink">
+        grilld
+      </Link>
+      <Link href="/billing" className="font-mono text-xs uppercase tracking-widest text-ink-soft">
+        billing
+      </Link>
+    </header>
   );
 }

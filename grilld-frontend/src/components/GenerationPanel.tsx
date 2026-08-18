@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { apiClient } from "@/lib/api-client";
+import { useEffect, useState } from "react";
+import { apiClient, runReportEventsUrl } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Loader } from "@/components/ui/loader";
+import { Markdown } from "@/components/ui/markdown";
 import { SlidingNumber } from "@/components/ui/sliding-number";
 import {
   ApiError,
@@ -21,11 +22,12 @@ import {
 
 /**
  * What happens after the interview concludes: calibrate scale, generate the
- * blueprint, watch it happen, download the package. Polls the Run Report
- * every 2s rather than opening the live SSE stream (RunReportController's
- * /events) - a real, working view of progress, not a fake "coming soon"
- * placeholder, but not yet the diff-highlighting live canvas the spec
- * describes either. See LEARNING.md's Phase 9 note.
+ * blueprint, watch it happen, download the package. Watches the Run Report
+ * over the real SSE stream (RunReportController's /events, proxied through
+ * runReportEventsUrl so the browser's EventSource - which can't set an
+ * Authorization header - still authenticates via the httpOnly cookie) -
+ * the diff-highlighting live canvas the spec eventually wants isn't built
+ * yet, but this is the real live feed, not a polling loop standing in for it.
  */
 export function GenerationPanel({ sessionId }: { sessionId: string }) {
   const [tier, setTier] = useState<ScaleCalibrationResult | null>(null);
@@ -35,14 +37,38 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
   const [pkg, setPkg] = useState<PackageStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     apiClient<BillingBalance>("/billing/balance").then(setBalance).catch(() => {});
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
   }, []);
+
+  async function pollPackage(runId: string) {
+    const status = await apiClient<PackageStatusResponse>(`/sessions/${sessionId}/runs/${runId}/package`).catch(
+      () => null,
+    );
+    if (!status) return;
+    setPkg(status);
+    if (status.status === "PENDING") {
+      setTimeout(() => pollPackage(runId), 1500);
+    }
+  }
+
+  useEffect(() => {
+    if (!run) return;
+
+    const source = new EventSource(runReportEventsUrl(sessionId, run.runId));
+    source.addEventListener("report", (event) => {
+      const update = JSON.parse((event as MessageEvent).data) as RunReportUpdate;
+      setReport(update);
+      if (update.status === "COMPLETED") {
+        pollPackage(run.runId);
+      }
+    });
+    source.onerror = () => source.close();
+
+    return () => source.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run]);
 
   async function calibrate() {
     setBusy(true);
@@ -67,7 +93,6 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
         method: "POST",
       });
       setRun(result);
-      pollRef.current = setInterval(() => pollReport(result.runId), 2000);
     } catch (e) {
       setError(
         e instanceof ApiError && e.status === 402
@@ -78,32 +103,6 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
       );
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function pollReport(runId: string) {
-    try {
-      const update = await apiClient<RunReportUpdate>(`/sessions/${sessionId}/runs/${runId}/report`);
-      setReport(update);
-      if (update.status === "COMPLETED") {
-        if (pollRef.current) clearInterval(pollRef.current);
-        pollPackage(runId);
-      } else if (update.status === "FAILED") {
-        if (pollRef.current) clearInterval(pollRef.current);
-      }
-    } catch {
-      if (pollRef.current) clearInterval(pollRef.current);
-    }
-  }
-
-  async function pollPackage(runId: string) {
-    const status = await apiClient<PackageStatusResponse>(`/sessions/${sessionId}/runs/${runId}/package`).catch(
-      () => null,
-    );
-    if (!status) return;
-    setPkg(status);
-    if (status.status === "PENDING") {
-      setTimeout(() => pollPackage(runId), 1500);
     }
   }
 
@@ -163,9 +162,9 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
             </div>
             {report.status === "IN_PROGRESS" && <Progress value={undefined} className="h-1.5" />}
             {report.runReportMd ? (
-              <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-ink">
+              <Markdown className="prose prose-sm max-h-64 max-w-none overflow-y-auto text-ink prose-headings:text-ink prose-strong:text-ink">
                 {report.runReportMd}
-              </pre>
+              </Markdown>
             ) : (
               <Loader variant="text-shimmer" text="Assembling…" size="sm" />
             )}

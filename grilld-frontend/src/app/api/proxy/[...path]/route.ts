@@ -40,11 +40,20 @@ async function proxy(request: NextRequest, ctx: RouteContext<"/api/proxy/[...pat
     duplex: "half",
   });
 
+  const headers: Record<string, string> = {
+    "Content-Type": upstream.headers.get("content-type") ?? "application/json",
+  };
+  // The package download response's filename lives here - dropping it (the
+  // proxy used to forward only Content-Type) meant the browser fell back to
+  // guessing a filename from the URL instead of grilld-blueprint-<runId>.zip.
+  const disposition = upstream.headers.get("content-disposition");
+  if (disposition) {
+    headers["Content-Disposition"] = disposition;
+  }
+
   return new Response(upstream.body, {
     status: upstream.status,
-    headers: {
-      "Content-Type": upstream.headers.get("content-type") ?? "application/json",
-    },
+    headers,
   });
 }
 
