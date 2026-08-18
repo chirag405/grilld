@@ -1,6 +1,7 @@
 package com.grilld.backend.generation;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -10,13 +11,16 @@ import java.nio.file.Path;
 import java.util.UUID;
 
 /**
- * The only {@link PackageStorage} implementation that exists today - a plain
- * directory on local disk. Real object storage (S3/R2) is deliberately not
- * built yet (§10.7); this is what makes "a real package zip downloads"
- * (the original Phase 6 gate) true without needing cloud credentials no one
- * has configured.
+ * A plain directory on local disk - the default {@link PackageStorage}, since
+ * it needs no cloud credentials to work (what originally made "a real package
+ * zip downloads", the Phase 6 gate, true with nothing configured). Does not
+ * survive a redeploy and does not work across more than one backend instance
+ * (each has its own disk) - {@link S3PackageStorage} is the real answer for
+ * a production deployment; switch with grilld.packages.storage-provider=s3
+ * (see docs/phases/phase-10/SETUP.md).
  */
 @Component
+@ConditionalOnProperty(prefix = "grilld.packages", name = "storage-provider", havingValue = "local", matchIfMissing = true)
 public class LocalFilesystemPackageStorage implements PackageStorage {
 
     private final Path baseDir;
