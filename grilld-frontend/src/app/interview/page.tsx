@@ -6,6 +6,15 @@ import { TitleBlockPanel } from "@/components/TitleBlockPanel";
 import { SlotList } from "@/components/SlotList";
 import { AnswerForm } from "@/components/AnswerForm";
 import { GenerationPanel } from "@/components/GenerationPanel";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  ChatContainerContent,
+  ChatContainerRoot,
+} from "@/components/ui/chat-container";
+import { Message, MessageContent } from "@/components/ui/message";
+import { PromptInput, PromptInputActions, PromptInputTextarea } from "@/components/ui/prompt-input";
+import { Loader } from "@/components/ui/loader";
 import { ApiError, type InputMode, type SessionDetail } from "@/lib/types";
 
 interface StartResponse {
@@ -22,15 +31,20 @@ interface AnswerResponse {
   whyAsking: string | null;
 }
 
+interface Turn {
+  role: "assistant" | "user";
+  content: string;
+  whyAsking?: string | null;
+}
+
 export default function InterviewPage() {
   const [rawIdea, setRawIdea] = useState("");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [question, setQuestion] = useState<string | null>(null);
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [inputMode, setInputMode] = useState<InputMode>("text");
-  const [whyAsking, setWhyAsking] = useState<string | null>(null);
   const [concluded, setConcluded] = useState(false);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [answering, setAnswering] = useState(false);
@@ -44,20 +58,19 @@ export default function InterviewPage() {
     }
   }
 
-  async function startInterview(e: React.FormEvent) {
-    e.preventDefault();
+  async function startInterview() {
     if (!rawIdea.trim() || starting) return;
     setStarting(true);
     setError(null);
     try {
+      const idea = rawIdea.trim();
       const result = await apiClient<StartResponse>("/sessions", {
         method: "POST",
-        body: JSON.stringify({ rawIdea: rawIdea.trim() }),
+        body: JSON.stringify({ rawIdea: idea }),
       });
       setSessionId(result.sessionId);
-      setQuestion(result.question);
+      setTurns([{ role: "assistant", content: result.question, whyAsking: result.whyAsking }]);
       setInputMode(result.inputMode);
-      setWhyAsking(result.whyAsking);
       await refreshDetail(result.sessionId);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't start the interview. Try again.");
@@ -70,6 +83,7 @@ export default function InterviewPage() {
     if (!sessionId) return;
     setAnswering(true);
     setError(null);
+    setTurns((t) => [...t, { role: "user", content: answerText }]);
     try {
       const result = await apiClient<AnswerResponse>(`/sessions/${sessionId}/answer`, {
         method: "POST",
@@ -77,11 +91,9 @@ export default function InterviewPage() {
       });
       if (result.concluded) {
         setConcluded(true);
-        setQuestion(null);
-      } else {
-        setQuestion(result.question);
+      } else if (result.question) {
+        setTurns((t) => [...t, { role: "assistant", content: result.question!, whyAsking: result.whyAsking }]);
         setInputMode(result.inputMode ?? "text");
-        setWhyAsking(result.whyAsking);
       }
       await refreshDetail(sessionId);
     } catch (e) {
@@ -93,56 +105,93 @@ export default function InterviewPage() {
 
   if (!sessionId) {
     return (
-      <main className="blueprint-sheet flex min-h-dvh items-center justify-center px-6">
-        <form onSubmit={startInterview} className="flex w-full max-w-xl flex-col gap-5">
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-blueprint">start here</p>
-          <h1 className="font-display text-3xl font-semibold text-ink">What are you building?</h1>
-          <textarea
+      <main className="flex min-h-dvh items-center justify-center bg-paper px-6">
+        <div className="flex w-full max-w-xl flex-col gap-5">
+          <p className="font-mono text-xs uppercase tracking-[0.3em] text-accent-ink">start here</p>
+          <h1 className="text-3xl font-semibold text-ink">What are you building?</h1>
+          <PromptInput
             value={rawIdea}
-            onChange={(e) => setRawIdea(e.target.value)}
-            autoFocus
-            rows={3}
-            placeholder="A tool for freelancers to track unpaid invoices..."
-            className="resize-none border-b-2 border-ink/20 bg-transparent py-2 font-display text-xl text-ink outline-none transition-colors focus:border-blueprint"
-          />
-          {error && <p className="text-sm text-danger">{error}</p>}
-          <button
-            type="submit"
-            disabled={starting || !rawIdea.trim()}
-            className="self-start rounded-md bg-ink px-6 py-3 font-display text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            onValueChange={setRawIdea}
+            onSubmit={startInterview}
+            isLoading={starting}
           >
-            {starting ? "Starting…" : "Start the interview"}
-          </button>
-        </form>
+            <PromptInputTextarea
+              autoFocus
+              rows={3}
+              placeholder="A tool for freelancers to track unpaid invoices..."
+            />
+            <PromptInputActions className="justify-end pt-2">
+              <Button onClick={startInterview} disabled={starting || !rawIdea.trim()}>
+                {starting ? "Starting…" : "Start the interview"}
+              </Button>
+            </PromptInputActions>
+          </PromptInput>
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+        </div>
       </main>
     );
   }
 
-  return (
-    <main className="grid min-h-dvh grid-cols-1 lg:grid-cols-[1fr_360px]">
-      <section className="flex flex-col justify-center gap-6 px-6 py-16 sm:px-12">
-        {question && (
-          <div className="animate-fade-up flex max-w-2xl flex-col gap-4" key={question}>
-            {whyAsking && <p className="text-sm italic text-ink-soft">{whyAsking}</p>}
-            <h2 className="font-display text-2xl font-semibold leading-snug text-ink sm:text-3xl">
-              {question}
-            </h2>
-            <AnswerForm inputMode={inputMode} onSubmit={submitAnswer} submitting={answering} />
-            {error && <p className="text-sm text-danger">{error}</p>}
-          </div>
-        )}
+  const currentInputMode = concluded ? null : inputMode;
 
-        {concluded && (
-          <div className="max-w-2xl">
-            <p className="mb-6 font-display text-2xl font-semibold text-ink">
-              That&rsquo;s enough to work with.
-            </p>
-            <GenerationPanel sessionId={sessionId} />
+  return (
+    <main className="grid min-h-dvh grid-cols-1 bg-paper lg:grid-cols-[1fr_360px]">
+      <section className="flex min-h-dvh flex-col">
+        <ChatContainerRoot className="flex-1 px-6 py-10 sm:px-12">
+          <ChatContainerContent className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+            {turns.map((turn, i) => (
+              <Message key={i} className={turn.role === "user" ? "justify-end" : "justify-start"}>
+                <div className="flex max-w-[85%] flex-col gap-1">
+                  {turn.role === "assistant" && turn.whyAsking && (
+                    <p className="px-1 text-xs italic text-ink-soft">{turn.whyAsking}</p>
+                  )}
+                  <MessageContent
+                    className={
+                      turn.role === "user"
+                        ? "bg-ink text-paper"
+                        : "bg-secondary text-ink"
+                    }
+                  >
+                    {turn.content}
+                  </MessageContent>
+                </div>
+              </Message>
+            ))}
+
+            {answering && (
+              <Message className="justify-start">
+                <div className="rounded-lg bg-secondary px-3 py-2">
+                  <Loader variant="typing" size="sm" />
+                </div>
+              </Message>
+            )}
+
+            {concluded && (
+              <div className="pt-2">
+                <p className="mb-4 text-xl font-semibold text-ink">That&rsquo;s enough to work with.</p>
+                <GenerationPanel sessionId={sessionId} />
+              </div>
+            )}
+          </ChatContainerContent>
+        </ChatContainerRoot>
+
+        {currentInputMode && (
+          <div className="mx-auto w-full max-w-2xl px-6 pb-8 sm:px-12">
+            {error && (
+              <Alert variant="destructive" className="mb-3">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            <AnswerForm inputMode={currentInputMode} onSubmit={submitAnswer} submitting={answering} />
           </div>
         )}
       </section>
 
-      <div className="border-t border-ink/15 lg:border-l lg:border-t-0">
+      <div className="border-t border-line lg:border-l lg:border-t-0">
         {detail && (
           <TitleBlockPanel
             project={detail.rawIdea}

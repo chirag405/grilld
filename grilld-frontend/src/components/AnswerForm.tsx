@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  PromptInput,
+  PromptInputActions,
+  PromptInputTextarea,
+} from "@/components/ui/prompt-input";
 import type { InputMode } from "@/lib/types";
 
 /**
@@ -24,48 +31,49 @@ export function AnswerForm({
 }) {
   const [value, setValue] = useState("");
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  function submit() {
     const trimmed = value.trim();
     if (!trimmed || submitting) return;
     onSubmit(trimmed);
     setValue("");
   }
 
-  return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-      {inputMode === "number" ? (
-        <input
+  if (inputMode === "number") {
+    return (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+        className="flex items-center gap-2"
+      >
+        <Input
           type="number"
           inputMode="numeric"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           autoFocus
           placeholder="Your answer"
-          className="w-full flex-1 border-b-2 border-ink/20 bg-transparent py-2 font-display text-xl text-ink outline-none transition-colors focus:border-blueprint"
+          className="flex-1"
         />
-      ) : (
-        <textarea
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          autoFocus
-          rows={2}
-          placeholder={inputMode === "voice_primary" ? "Speak, or type your answer" : "Your answer"}
-          className="w-full flex-1 resize-none border-b-2 border-ink/20 bg-transparent py-2 font-display text-xl text-ink outline-none transition-colors focus:border-blueprint"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              handleSubmit(e);
-            }
-          }}
-        />
-      )}
-      <button
-        type="submit"
-        disabled={submitting || !value.trim()}
-        className="shrink-0 rounded-md bg-ink px-5 py-2.5 font-display text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        {submitting ? "Sending…" : "Answer"}
-      </button>
-    </form>
+        <Button type="submit" disabled={submitting || !value.trim()}>
+          {submitting ? "Sending…" : "Answer"}
+        </Button>
+      </form>
+    );
+  }
+
+  return (
+    <PromptInput value={value} onValueChange={setValue} onSubmit={submit} isLoading={submitting}>
+      <PromptInputTextarea
+        autoFocus
+        placeholder={inputMode === "voice_primary" ? "Speak, or type your answer" : "Your answer"}
+      />
+      <PromptInputActions className="justify-end pt-2">
+        <Button size="sm" onClick={submit} disabled={submitting || !value.trim()}>
+          {submitting ? "Sending…" : "Answer"}
+        </Button>
+      </PromptInputActions>
+    </PromptInput>
   );
 }

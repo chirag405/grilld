@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 /**
- * The recurring signature motif (see the landing page's TitleBlock) - reused
- * here as the frame for the live brief panel. A compartmented header like a
- * real engineering drawing's title block, then arbitrary content below.
+ * The live brief panel's frame - project idea, current scale tier, and
+ * interview status, with the slot checklist (children) below.
  */
 export function TitleBlockPanel({
   project,
@@ -17,24 +18,22 @@ export function TitleBlockPanel({
   children: ReactNode;
 }) {
   return (
-    <aside className="flex h-full flex-col border border-ink/15 bg-paper">
-      <div className="grid grid-cols-2 divide-x divide-ink/15 border-b border-ink/15 font-mono text-[11px] text-ink-soft">
-        <HeaderField label="project">{project}</HeaderField>
-        <HeaderField label="scale">{scale}</HeaderField>
-      </div>
-      <div className="border-b border-ink/15 font-mono text-[11px] text-ink-soft">
-        <HeaderField label="status">{status}</HeaderField>
-      </div>
-      <div className="flex-1 overflow-y-auto px-4 py-4">{children}</div>
-    </aside>
-  );
-}
-
-function HeaderField({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="px-3 py-2">
-      <div className="uppercase tracking-widest text-ink-soft/60">{label}</div>
-      <div className="mt-0.5 truncate text-ink">{children}</div>
-    </div>
+    <Card className="h-full gap-4 rounded-none border-0 border-l py-5 shadow-none">
+      <CardHeader className="gap-3 px-5">
+        <div>
+          <p className="font-mono text-[11px] uppercase tracking-widest text-ink-soft">project</p>
+          <p className="mt-0.5 truncate text-sm font-medium text-ink">{project}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="font-mono text-[11px]">
+            scale {scale}
+          </Badge>
+          <Badge variant="secondary" className="font-mono text-[11px]">
+            {status}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex-1 overflow-y-auto px-5">{children}</CardContent>
+    </Card>
   );
 }

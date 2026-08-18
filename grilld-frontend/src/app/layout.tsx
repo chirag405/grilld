@@ -1,28 +1,15 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, Inter, IBM_Plex_Mono } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { cn } from "@/lib/utils";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
-// Distinct variable names from the --font-display/-body/-mono Tailwind theme
-// tokens (globals.css) - those reference these with a fallback stack, rather
-// than next/font and @theme both trying to own the same custom property.
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  variable: "--font-space-grotesk",
-  display: "swap",
-});
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
-
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-plex-mono",
-  display: "swap",
-});
+// One real type pairing (same family, designed together) rather than several
+// competing sans faces - Geist for everything, Geist Mono for data/labels
+// (credit counts, slot keys, run status) where Grilld's content is genuinely
+// structured/technical, not for decoration.
+const geistSans = Geist({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
 export const metadata: Metadata = {
   title: "Grilld",
@@ -31,8 +18,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} ${plexMono.variable}`}>
-      <body>{children}</body>
+    <html lang="en" className={cn(geistSans.variable, geistMono.variable, "font-sans")}>
+      <body>
+        <TooltipProvider>{children}</TooltipProvider>
+      </body>
     </html>
   );
 }

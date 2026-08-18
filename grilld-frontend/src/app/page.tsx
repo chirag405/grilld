@@ -1,88 +1,72 @@
+"use client";
+
 import Link from "next/link";
+import { TextEffect } from "@/components/ui/text-effect";
+import { GlowEffect } from "@/components/ui/glow-effect";
+import { Spotlight } from "@/components/ui/spotlight";
+import { AuroraBackground } from "@/components/ui/aurora-background";
+import { Button } from "@/components/ui/button";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8080";
 
 export default function LandingPage() {
   return (
-    <main className="blueprint-sheet relative flex min-h-dvh flex-col overflow-hidden">
-      <header className="flex items-center justify-between px-6 py-6 sm:px-10">
-        <span className="font-display text-lg font-semibold tracking-tight text-ink">
-          grilld
-        </span>
+    <AuroraBackground className="min-h-dvh justify-between overflow-hidden py-6">
+      <Spotlight className="-top-32 left-0 md:-top-20 md:left-40" fill="var(--color-accent)" />
+
+      <header className="relative z-10 flex w-full items-center justify-between px-6 sm:px-10">
+        <span className="text-lg font-semibold tracking-tight text-ink">grilld</span>
         <span className="font-mono text-xs uppercase tracking-widest text-ink-soft">
           idea &rarr; blueprint
         </span>
       </header>
 
-      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center gap-12 px-6 py-16 sm:px-10">
-        <div className="animate-fade-up flex flex-col items-center gap-6 text-center">
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-blueprint">
-            an interrogation, not a chat
-          </p>
-          <h1 className="max-w-3xl text-balance font-display text-4xl font-semibold leading-[1.05] tracking-tight text-ink sm:text-6xl">
-            Grill your idea until it&rsquo;s a project you can actually build.
-          </h1>
-          <p className="max-w-xl text-balance text-base leading-relaxed text-ink-soft sm:text-lg">
-            Grilld asks the questions a sharp technical cofounder would ask &mdash;
-            then turns your answers into an architecture, an infra plan, and a
-            phased build order. Not another chat window.
-          </p>
-        </div>
+      <div className="relative z-10 mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-8 px-6 py-16 text-center sm:px-10">
+        <p className="font-mono text-xs font-medium uppercase tracking-[0.3em] text-accent-ink">
+          an interrogation, not a chat
+        </p>
 
-        <Link
-          href={`${BACKEND_URL}/oauth2/authorization/google`}
-          className="animate-fade-up group inline-flex items-center gap-3 rounded-md bg-ink px-6 py-3.5 font-display text-sm font-medium text-paper shadow-[3px_3px_0_0_var(--color-rust)] transition-transform hover:-translate-y-0.5 hover:shadow-[4px_4px_0_0_var(--color-rust)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rust"
-          style={{ animationDelay: "80ms" }}
+        <TextEffect
+          as="h1"
+          per="word"
+          preset="fade-in-blur"
+          className="text-balance text-4xl font-semibold leading-[1.08] tracking-tight text-ink sm:text-6xl"
         >
-          <GoogleMark />
-          Sign in with Google
-        </Link>
+          Grill your idea until it&rsquo;s a project you can actually build.
+        </TextEffect>
 
-        <TitleBlock />
+        <TextEffect
+          as="p"
+          per="line"
+          preset="fade"
+          delay={0.4}
+          className="max-w-xl text-balance text-base leading-relaxed text-ink-soft sm:text-lg"
+        >
+          Grilld asks the questions a sharp technical cofounder would ask, then turns your answers
+          into an architecture, an infra plan, and a phased build order.
+        </TextEffect>
+
+        <div className="relative mt-2">
+          <GlowEffect
+            colors={["#D97706", "#FBBF24", "#D97706"]}
+            mode="pulse"
+            blur="soft"
+            duration={4}
+            className="opacity-70"
+          />
+          <Button asChild size="lg" className="relative px-7 py-6 text-base">
+            <Link href={`${BACKEND_URL}/oauth2/authorization/google`} className="gap-3">
+              <GoogleMark />
+              Sign in with Google
+            </Link>
+          </Button>
+        </div>
       </div>
 
-      <footer className="px-6 pb-8 text-center font-mono text-[11px] text-ink-soft/70 sm:px-10">
+      <footer className="relative z-10 px-6 pb-8 text-center font-mono text-[11px] text-ink-soft/70 sm:px-10">
         No card required &middot; 60 free credits on signup &middot; one full blueprint
       </footer>
-    </main>
-  );
-}
-
-/**
- * The signature element (frontend-design skill: "the single unique element
- * this page will be remembered by"). A literal engineering title block -
- * every real blueprint has one in a bottom corner - standing in here for
- * what Grilld actually produces. Recurs, filled in with real data, on the
- * live brief panel and the Run Report canvas.
- */
-function TitleBlock() {
-  return (
-    <div
-      className="animate-fade-up w-full max-w-md border border-ink/20 bg-paper font-mono text-[11px] text-ink-soft"
-      style={{ animationDelay: "160ms" }}
-    >
-      <div className="grid grid-cols-2 divide-x divide-ink/20 border-b border-ink/20">
-        <Field label="project">your next idea</Field>
-        <Field label="scale">T0&ndash;T3</Field>
-      </div>
-      <div className="grid grid-cols-2 divide-x divide-ink/20 border-b border-ink/20">
-        <Field label="drawn by">you</Field>
-        <Field label="reviewed by">10 specialist agents</Field>
-      </div>
-      <div className="grid grid-cols-2 divide-x divide-ink/20">
-        <Field label="rev">00</Field>
-        <Field label="status">not yet interrogated</Field>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="px-3 py-2">
-      <div className="uppercase tracking-widest text-ink-soft/60">{label}</div>
-      <div className="mt-0.5 text-ink">{children}</div>
-    </div>
+    </AuroraBackground>
   );
 }
 

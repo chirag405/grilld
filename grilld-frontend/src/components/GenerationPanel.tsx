@@ -2,6 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { apiClient } from "@/lib/api-client";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Loader } from "@/components/ui/loader";
+import { SlidingNumber } from "@/components/ui/sliding-number";
 import {
   ApiError,
   FULL_BLUEPRINT_CREDITS,
@@ -18,9 +25,7 @@ import {
  * every 2s rather than opening the live SSE stream (RunReportController's
  * /events) - a real, working view of progress, not a fake "coming soon"
  * placeholder, but not yet the diff-highlighting live canvas the spec
- * describes either. See LEARNING.md's Phase 9 note: that's real, scoped
- * follow-up work, not something worth faking with a polling loop dressed up
- * to look like it.
+ * describes either. See LEARNING.md's Phase 9 note.
  */
 export function GenerationPanel({ sessionId }: { sessionId: string }) {
   const [tier, setTier] = useState<ScaleCalibrationResult | null>(null);
@@ -105,68 +110,81 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
   const canAfford = balance ? balance.creditsBalance >= FULL_BLUEPRINT_CREDITS : true;
 
   return (
-    <div className="flex flex-col gap-6 border-t border-ink/15 pt-6">
-      <div className="flex items-center justify-between font-mono text-xs text-ink-soft">
-        <span>interview complete</span>
-        {balance && <span>{balance.creditsBalance} credits</span>}
-      </div>
+    <Card className="max-w-2xl gap-5">
+      <CardHeader className="flex-row items-center justify-between px-5">
+        <Badge variant="secondary">interview complete</Badge>
+        {balance && (
+          <span className="flex items-center gap-1 font-mono text-xs text-ink-soft">
+            <SlidingNumber value={balance.creditsBalance} /> credits
+          </span>
+        )}
+      </CardHeader>
 
-      {!tier ? (
-        <button
-          onClick={calibrate}
-          disabled={busy}
-          className="self-start rounded-md border border-ink px-5 py-2.5 font-display text-sm font-medium text-ink transition-colors hover:bg-ink hover:text-paper disabled:opacity-40"
-        >
-          {busy ? "Calibrating…" : "Calibrate scale"}
-        </button>
-      ) : (
-        <div className="flex flex-col gap-1">
-          <p className="font-display text-sm font-medium text-ink">Scale: {tier.tier}</p>
-          <p className="text-sm text-ink-soft">{tier.reasoning}</p>
-        </div>
-      )}
+      <CardContent className="flex flex-col gap-5 px-5">
+        {!tier ? (
+          <Button onClick={calibrate} disabled={busy} variant="outline" className="self-start">
+            {busy ? "Calibrating…" : "Calibrate scale"}
+          </Button>
+        ) : (
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium text-ink">Scale: {tier.tier}</p>
+            <p className="text-sm text-ink-soft">{tier.reasoning}</p>
+          </div>
+        )}
 
-      {tier && !run && (
-        <div className="flex flex-col gap-2">
-          <button
-            onClick={generate}
-            disabled={busy || !canAfford}
-            className="self-start rounded-md bg-rust px-5 py-2.5 font-display text-sm font-medium text-paper shadow-[3px_3px_0_0_var(--color-ink)] transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {busy ? "Starting…" : `Generate blueprint (${FULL_BLUEPRINT_CREDITS} credits)`}
-          </button>
-          {!canAfford && (
-            <p className="text-sm text-danger">
-              Not enough credits ({balance?.creditsBalance ?? 0}/{FULL_BLUEPRINT_CREDITS}).
-            </p>
-          )}
-        </div>
-      )}
+        {tier && !run && (
+          <div className="flex flex-col gap-2">
+            <Button onClick={generate} disabled={busy || !canAfford} className="self-start">
+              {busy ? "Starting…" : `Generate blueprint (${FULL_BLUEPRINT_CREDITS} credits)`}
+            </Button>
+            {!canAfford && (
+              <Alert variant="destructive">
+                <AlertDescription>
+                  Not enough credits ({balance?.creditsBalance ?? 0}/{FULL_BLUEPRINT_CREDITS}).
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        )}
 
-      {error && <p className="text-sm text-danger">{error}</p>}
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-      {report && (
-        <div className="blueprint-sheet border border-ink/15 p-4">
-          <p className="mb-2 font-mono text-xs uppercase tracking-widest text-ink-soft">
-            Run Report — {report.status}
-          </p>
-          <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-ink">
-            {report.runReportMd ?? "Assembling…"}
-          </pre>
-          {report.status === "FAILED" && report.failureReason && (
-            <p className="mt-2 text-sm text-danger">{report.failureReason}</p>
-          )}
-        </div>
-      )}
+        {report && (
+          <div className="flex flex-col gap-3 rounded-lg border border-line bg-secondary/40 p-4">
+            <div className="flex items-center justify-between">
+              <p className="font-mono text-xs uppercase tracking-widest text-ink-soft">Run Report</p>
+              <Badge variant={report.status === "FAILED" ? "destructive" : "outline"}>
+                {report.status}
+              </Badge>
+            </div>
+            {report.status === "IN_PROGRESS" && <Progress value={undefined} className="h-1.5" />}
+            {report.runReportMd ? (
+              <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-ink">
+                {report.runReportMd}
+              </pre>
+            ) : (
+              <Loader variant="text-shimmer" text="Assembling…" size="sm" />
+            )}
+            {report.status === "FAILED" && report.failureReason && (
+              <Alert variant="destructive">
+                <AlertDescription>{report.failureReason}</AlertDescription>
+              </Alert>
+            )}
+          </div>
+        )}
 
-      {pkg?.status === "READY" && run && (
-        <a
-          href={`/api/proxy/sessions/${sessionId}/runs/${run.runId}/package/download`}
-          className="self-start rounded-md bg-ink px-5 py-2.5 font-display text-sm font-medium text-paper transition-opacity hover:opacity-90"
-        >
-          Download blueprint (.zip)
-        </a>
-      )}
-    </div>
+        {pkg?.status === "READY" && run && (
+          <Button asChild className="self-start">
+            <a href={`/api/proxy/sessions/${sessionId}/runs/${run.runId}/package/download`}>
+              Download blueprint (.zip)
+            </a>
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 }
