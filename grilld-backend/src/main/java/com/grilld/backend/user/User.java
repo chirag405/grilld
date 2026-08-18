@@ -31,12 +31,17 @@ public class User {
     @Column(name = "google_id", nullable = false, unique = true)
     private String googleId;
 
+    private String name;
+
+    @Column(name = "picture_url")
+    private String pictureUrl;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Plan plan = Plan.FREE;
 
     @Column(name = "credits_balance", nullable = false)
-    private int creditsBalance = 60; // free signup grant, product-and-architecture.md §10
+    private int creditsBalance = 0; // no free grant - every credit is purchased, see CreditService
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
@@ -50,6 +55,12 @@ public class User {
         this.googleId = googleId;
     }
 
+    /** Refreshed on every login - Google's own copy is the source of truth, not ours. */
+    public void updateProfile(String name, String pictureUrl) {
+        this.name = name;
+        this.pictureUrl = pictureUrl;
+    }
+
     public UUID getId() {
         return id;
     }
@@ -60,6 +71,14 @@ public class User {
 
     public String getGoogleId() {
         return googleId;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public String getPictureUrl() {
+        return pictureUrl;
     }
 
     public Plan getPlan() {

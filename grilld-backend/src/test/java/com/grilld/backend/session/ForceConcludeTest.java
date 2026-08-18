@@ -46,7 +46,7 @@ class ForceConcludeTest {
 
     @Test
     void forceConcludeTransitionsAnActiveSessionRegardlessOfInterviewState() {
-        User user = userService.findOrCreateFromGoogle("force-conclude-google-id", "force-conclude@example.com");
+        User user = userService.findOrCreateFromGoogle("force-conclude-google-id", "force-conclude@example.com", null, null);
         InterrogatorTurnResult.NextQuestion question = new InterrogatorTurnResult.NextQuestion(
                 "What's the core problem?", List.of("problem_statement"), "FREE_ELICITATION", "text", "opening");
         when(aiServiceClient.nextTurn(ArgumentMatchers.any())).thenReturn(

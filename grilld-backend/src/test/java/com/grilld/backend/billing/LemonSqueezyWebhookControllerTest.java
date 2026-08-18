@@ -88,7 +88,7 @@ class LemonSqueezyWebhookControllerTest {
 
     @Test
     void paidOrderForTheStarterVariantGrantsSixtyCredits() throws Exception {
-        User user = userService.findOrCreateFromGoogle("webhook-starter-google-id", "webhook-starter@example.com");
+        User user = userService.findOrCreateFromGoogle("webhook-starter-google-id", "webhook-starter@example.com", null, null);
         String body = orderCreatedPayload("order-starter-1", user.getId().toString(), "1001", "paid");
 
         mockMvc.perform(post("/api/v1/billing/webhooks/lemonsqueezy")
@@ -98,13 +98,13 @@ class LemonSqueezyWebhookControllerTest {
                         .content(body))
                 .andExpect(status().isOk());
 
-        assertEquals(120, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance(),
-                "60 free-signup grant + 60 from the Starter package");
+        assertEquals(60, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance(),
+                "60 from the Starter package - no free-signup grant any more");
     }
 
     @Test
     void paidOrderForTheTopupVariantGrantsFiftyCredits() throws Exception {
-        User user = userService.findOrCreateFromGoogle("webhook-topup-google-id", "webhook-topup@example.com");
+        User user = userService.findOrCreateFromGoogle("webhook-topup-google-id", "webhook-topup@example.com", null, null);
         String body = orderCreatedPayload("order-topup-1", user.getId().toString(), "1002", "paid");
 
         mockMvc.perform(post("/api/v1/billing/webhooks/lemonsqueezy")
@@ -114,12 +114,12 @@ class LemonSqueezyWebhookControllerTest {
                         .content(body))
                 .andExpect(status().isOk());
 
-        assertEquals(110, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance());
+        assertEquals(50, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance());
     }
 
     @Test
     void redeliveredWebhookForTheSameOrderDoesNotDoubleCredit() throws Exception {
-        User user = userService.findOrCreateFromGoogle("webhook-replay-google-id", "webhook-replay@example.com");
+        User user = userService.findOrCreateFromGoogle("webhook-replay-google-id", "webhook-replay@example.com", null, null);
         String body = orderCreatedPayload("order-replay-1", user.getId().toString(), "1002", "paid");
         String signature = sign(body);
 
@@ -132,7 +132,7 @@ class LemonSqueezyWebhookControllerTest {
                         .contentType("application/json").content(body))
                 .andExpect(status().isOk());
 
-        assertEquals(110, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance(),
+        assertEquals(50, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance(),
                 "a retried/redelivered webhook for the same order id must not grant twice");
         assertEquals(1, creditTransactionRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).stream()
                 .filter(t -> t.getReason().equals("LEMON_SQUEEZY_ORDER:order-replay-1")).count());
@@ -140,7 +140,7 @@ class LemonSqueezyWebhookControllerTest {
 
     @Test
     void invalidSignatureIsRejectedAndGrantsNothing() throws Exception {
-        User user = userService.findOrCreateFromGoogle("webhook-badsig-google-id", "webhook-badsig@example.com");
+        User user = userService.findOrCreateFromGoogle("webhook-badsig-google-id", "webhook-badsig@example.com", null, null);
         String body = orderCreatedPayload("order-badsig-1", user.getId().toString(), "1002", "paid");
 
         mockMvc.perform(post("/api/v1/billing/webhooks/lemonsqueezy")
@@ -150,13 +150,13 @@ class LemonSqueezyWebhookControllerTest {
                         .content(body))
                 .andExpect(status().isUnauthorized());
 
-        assertEquals(60, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance(),
+        assertEquals(0, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance(),
                 "an invalid signature must not grant credits");
     }
 
     @Test
     void unrecognizedVariantIsAcknowledgedButGrantsNothing() throws Exception {
-        User user = userService.findOrCreateFromGoogle("webhook-unknown-google-id", "webhook-unknown@example.com");
+        User user = userService.findOrCreateFromGoogle("webhook-unknown-google-id", "webhook-unknown@example.com", null, null);
         String body = orderCreatedPayload("order-unknown-1", user.getId().toString(), "9999", "paid");
 
         mockMvc.perform(post("/api/v1/billing/webhooks/lemonsqueezy")
@@ -166,12 +166,12 @@ class LemonSqueezyWebhookControllerTest {
                         .content(body))
                 .andExpect(status().isOk());
 
-        assertEquals(60, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance());
+        assertEquals(0, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance());
     }
 
     @Test
     void nonOrderCreatedEventsAreAcknowledgedAndIgnored() throws Exception {
-        User user = userService.findOrCreateFromGoogle("webhook-otherevent-google-id", "webhook-otherevent@example.com");
+        User user = userService.findOrCreateFromGoogle("webhook-otherevent-google-id", "webhook-otherevent@example.com", null, null);
         String body = orderCreatedPayload("order-refund-1", user.getId().toString(), "1002", "paid");
 
         mockMvc.perform(post("/api/v1/billing/webhooks/lemonsqueezy")
@@ -181,6 +181,6 @@ class LemonSqueezyWebhookControllerTest {
                         .content(body))
                 .andExpect(status().isOk());
 
-        assertEquals(60, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance());
+        assertEquals(0, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance());
     }
 }

@@ -38,12 +38,14 @@ class OAuth2LoginSuccessHandlerTest {
                 new OAuth2LoginSuccessHandler(userService, tokenService, "http://localhost:3000");
 
         User user = new User("person@example.com", "google-sub-123");
-        when(userService.findOrCreateFromGoogle("google-sub-123", "person@example.com")).thenReturn(user);
+        when(userService.findOrCreateFromGoogle("google-sub-123", "person@example.com", "Person Example", "https://example.com/pic.jpg"))
+                .thenReturn(user);
         when(tokenService.issueFor(user)).thenReturn("fake.jwt.token");
 
         OAuth2User oAuth2User = new DefaultOAuth2User(
                 java.util.List.of(() -> "ROLE_USER"),
-                Map.of("sub", "google-sub-123", "email", "person@example.com"),
+                Map.of("sub", "google-sub-123", "email", "person@example.com",
+                        "name", "Person Example", "picture", "https://example.com/pic.jpg"),
                 "sub");
         Authentication authentication = new TestingAuthenticationToken(oAuth2User, null);
 
@@ -52,7 +54,8 @@ class OAuth2LoginSuccessHandlerTest {
 
         handler.onAuthenticationSuccess(request, response, authentication);
 
-        verify(userService).findOrCreateFromGoogle(eq("google-sub-123"), eq("person@example.com"));
+        verify(userService).findOrCreateFromGoogle(eq("google-sub-123"), eq("person@example.com"),
+                eq("Person Example"), eq("https://example.com/pic.jpg"));
         verify(tokenService).issueFor(user);
 
         assertEquals("http://localhost:3000/auth/callback?token=fake.jwt.token", response.getRedirectedUrl());

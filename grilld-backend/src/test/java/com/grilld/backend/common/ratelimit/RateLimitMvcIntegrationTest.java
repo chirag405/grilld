@@ -50,7 +50,7 @@ class RateLimitMvcIntegrationTest {
 
     @Test
     void secondSessionCreationWithinTheWindowIsRejectedWith429() throws Exception {
-        User user = userService.findOrCreateFromGoogle("google-ratelimit-test-sub", "ratelimit-test@example.com");
+        User user = userService.findOrCreateFromGoogle("google-ratelimit-test-sub", "ratelimit-test@example.com", null, null);
         String token = tokenService.issueFor(user);
 
         mockMvc.perform(post("/api/v1/sessions")

@@ -13,6 +13,8 @@ import java.util.UUID;
 public record UserResponse(
         UUID id,
         String email,
+        String name,
+        String pictureUrl,
         User.Plan plan,
         int creditsBalance,
         Instant createdAt
@@ -21,6 +23,8 @@ public record UserResponse(
         return new UserResponse(
                 user.getId(),
                 user.getEmail(),
+                user.getName(),
+                user.getPictureUrl(),
                 user.getPlan(),
                 user.getCreditsBalance(),
                 user.getCreatedAt()

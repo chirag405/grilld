@@ -20,6 +20,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -79,6 +80,29 @@ public class SessionService {
         }
     }
 
+    /** Powers "your past conversations" - most recently touched first. */
+    public List<SessionSummary> listSessions(UUID userId) {
+        return sessionRepository.findByUserIdOrderByUpdatedAtDesc(userId).stream()
+                .map(s -> new SessionSummary(s.getId(), s.getRawIdea(), s.getStatus().name(),
+                        s.getCreatedAt(), s.getUpdatedAt()))
+                .toList();
+    }
+
+    /**
+     * Rebuilds a session's chat transcript for resuming - question/answer pairs
+     * plus the reasoning shown at the time. The one field this can't restore is
+     * chip_options for a still-pending question (never persisted on Turn; only
+     * NextQuestion carries it) - a resumed chip question falls back to free
+     * text, a known, honest gap rather than fabricated placeholder options.
+     */
+    public List<TurnHistoryEntry> getTurnHistory(UUID sessionId) {
+        List<Turn> turns = turnRepository.findBySessionIdOrderByTurnNumberDesc(sessionId);
+        return turns.reversed().stream()
+                .map(t -> new TurnHistoryEntry(t.getTurnNumber(), t.getQuestionText(), t.getAnswerText(),
+                        t.getAssistantMessage(), t.getInputMode(), t.getReasoningSummary() != null ? toTraceView(t) : null))
+                .toList();
+    }
+
     @Transactional
     public SessionStartResult startSession(UUID userId, String rawIdea) {
         DiscoverySession session = sessionRepository.save(new DiscoverySession(userId, rawIdea));
@@ -93,9 +117,11 @@ public class SessionService {
         }
 
         Turn firstTurn = createTurnFromQuestion(session.getId(), 1, result);
+        applyReasoning(firstTurn, result);
         InterrogatorTurnResult.NextQuestion question = result.nextQuestion();
         return new SessionStartResult(session.getId(), firstTurn.getQuestionText(), question.inputMode(),
-                question.whyAsking(), question.chipOptions());
+                question.whyAsking(), question.chipOptions(), result.intent(), result.assistantMessage(),
+                toTraceView(result.reasoningTrace()));
     }
 
     @Transactional
@@ -107,11 +133,6 @@ public class SessionService {
                 .findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("Session " + sessionId + " has no pending turn"));
         pendingTurn.recordAnswer(answerText);
-
-        if (requestsImmediateConclusion(answerText)) {
-            session.markReadyForGeneration();
-            return TurnAnswerResult.markConcluded();
-        }
 
         WorkingContext context = contextAssembler.assemble(sessionId);
         InterrogatorTurnResult result = aiServiceClient.nextTurn(context);
@@ -125,12 +146,16 @@ public class SessionService {
             // will reject it (and retry with a targeted question) unless the
             // brief genuinely is complete enough, which is the right outcome
             // either way.
-            return resolveConclusionAttempt(sessionId, session, pendingTurn);
+            if ("FINISH".equals(result.intent())) {
+                session.markReadyForGeneration();
+                return TurnAnswerResult.markConcluded(result);
+            }
+            return resolveConclusionAttempt(sessionId, session, pendingTurn, result);
         }
 
         Turn nextTurn = createTurnFromQuestion(sessionId, pendingTurn.getTurnNumber() + 1, result);
         session.touch();
-        return TurnAnswerResult.nextQuestion(nextTurn.getQuestionText(), result.nextQuestion());
+        return TurnAnswerResult.nextQuestion(nextTurn.getQuestionText(), result);
     }
 
     /**
@@ -159,15 +184,6 @@ public class SessionService {
         mergeBriefJson(sessionId, patch);
     }
 
-    private boolean requestsImmediateConclusion(String answerText) {
-        String normalized = answerText.toLowerCase();
-        return normalized.contains("finish it") || normalized.contains("finish now")
-                || normalized.contains("proceed to end") || normalized.contains("procced to end")
-                || normalized.contains("stop asking") || normalized.contains("no more question")
-                || normalized.contains("will not answer anymore") || normalized.contains("won't answer anymore")
-                || normalized.contains("decide the app feature") || normalized.contains("just generate");
-    }
-
     /**
      * The Interrogator thinks it's done - but per product-and-architecture.md
      * §7, that's only a proposal. The Rubric Agent is the actual adversarial
@@ -175,13 +191,14 @@ public class SessionService {
      * open_gaps get handed straight back to the Interrogator for one more,
      * targeted question (interrogation-engine.md §8) instead of ending.
      */
-    private TurnAnswerResult resolveConclusionAttempt(UUID sessionId, DiscoverySession session, Turn lastAnsweredTurn) {
+    private TurnAnswerResult resolveConclusionAttempt(UUID sessionId, DiscoverySession session, Turn lastAnsweredTurn,
+                                                       InterrogatorTurnResult result) {
         RubricResult rubric = evaluateRubric(sessionId);
         persistRubricEvaluation(sessionId, lastAnsweredTurn.getTurnNumber(), rubric);
 
         if (rubric.accepted()) {
             session.markReadyForGeneration();
-            return TurnAnswerResult.markConcluded();
+            return TurnAnswerResult.markConcluded(result);
         }
 
         WorkingContext retryContext = contextAssembler.assemble(sessionId, rubric.openGaps());
@@ -194,12 +211,12 @@ public class SessionService {
             // Everything unresolved is already on record via the RubricEvaluation
             // just persisted above.
             session.markReadyForGeneration();
-            return TurnAnswerResult.markConcluded();
+            return TurnAnswerResult.markConcluded(retryResult);
         }
 
         Turn nextTurn = createTurnFromQuestion(sessionId, lastAnsweredTurn.getTurnNumber() + 1, retryResult);
         session.touch();
-        return TurnAnswerResult.nextQuestion(nextTurn.getQuestionText(), retryResult.nextQuestion());
+        return TurnAnswerResult.nextQuestion(nextTurn.getQuestionText(), retryResult);
     }
 
     /**
@@ -217,8 +234,12 @@ public class SessionService {
                 .map(s -> new SlotView(s.getSlotKey(), s.getDescription(), s.getStatus().name(),
                         s.getValue(), s.getImportance()))
                 .toList();
+        List<ReasoningTraceView> reasoningTraces = turnRepository.findBySessionIdOrderByTurnNumberDesc(sessionId).stream()
+                .filter(turn -> turn.getReasoningSummary() != null)
+                .map(this::toTraceView)
+                .toList();
         return new SessionDetail(sessionId, session.getStatus().name(), session.getRawIdea(),
-                brief.getBriefJson(), brief.getScaleTier(), brief.getScaleTierReasoning(), slots);
+                brief.getBriefJson(), brief.getScaleTier(), brief.getScaleTierReasoning(), slots, reasoningTraces);
     }
 
     @Transactional
@@ -327,6 +348,30 @@ public class SessionService {
         List<String> spawnedKeys = result.newSlots().stream().map(InterrogatorTurnResult.NewSlot::key).toList();
         List<String> waivedKeys = result.waivedSlots().stream().map(InterrogatorTurnResult.WaivedSlot::key).toList();
         answeredTurn.applyExtraction(toJson(result.extractedFacts()), spawnedKeys, waivedKeys, null, null);
+        applyReasoning(answeredTurn, result);
+    }
+
+    private void applyReasoning(Turn turn, InterrogatorTurnResult result) {
+        InterrogatorTurnResult.ReasoningTrace trace = result.reasoningTrace();
+        turn.applyReasoning(result.intent(), result.assistantMessage(), trace.summary(),
+                toJson(trace.decisions()), toJson(trace.assumptions()));
+        turnRepository.save(turn);
+    }
+
+    private ReasoningTraceView toTraceView(InterrogatorTurnResult.ReasoningTrace trace) {
+        return new ReasoningTraceView(trace.summary(), trace.decisions(), trace.assumptions());
+    }
+
+    private ReasoningTraceView toTraceView(Turn turn) {
+        try {
+            List<String> decisions = objectMapper.readValue(turn.getReasoningDecisions(),
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
+            List<String> assumptions = objectMapper.readValue(turn.getReasoningAssumptions(),
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
+            return new ReasoningTraceView(turn.getReasoningSummary(), decisions, assumptions);
+        } catch (Exception e) {
+            throw new IllegalStateException("Could not read reasoning trace for turn " + turn.getId(), e);
+        }
     }
 
     private boolean isContradiction(Slot existingSlot, InterrogatorTurnResult.ExtractedFact fact) {
@@ -420,25 +465,44 @@ public class SessionService {
      * needs to re-fetch a past turn's question.
      */
     public record SessionStartResult(UUID sessionId, String question, String inputMode, String whyAsking,
-                                      List<String> chipOptions) {
+                                      List<String> chipOptions, String intent, String assistantMessage,
+                                      ReasoningTraceView reasoningTrace) {
     }
 
     public record SlotView(String slotKey, String description, String status, String value, int importance) {
     }
 
+    public record SessionSummary(UUID sessionId, String rawIdea, String status,
+                                  Instant createdAt, Instant updatedAt) {
+    }
+
+    public record TurnHistoryEntry(int turnNumber, String questionText, String answerText, String assistantMessage,
+                                    String inputMode, ReasoningTraceView reasoningTrace) {
+    }
+
     public record SessionDetail(UUID sessionId, String status, String rawIdea, String briefJson, String scaleTier,
-                                 String scaleTierReasoning, List<SlotView> slots) {
+                                 String scaleTierReasoning, List<SlotView> slots,
+                                 List<ReasoningTraceView> reasoningTraces) {
+    }
+
+    public record ReasoningTraceView(String summary, List<String> decisions, List<String> assumptions) {
     }
 
     public record TurnAnswerResult(String question, boolean concluded, String inputMode, String whyAsking,
-                                    List<String> chipOptions) {
-        static TurnAnswerResult nextQuestion(String question, InterrogatorTurnResult.NextQuestion nextQuestion) {
+                                    List<String> chipOptions, String intent, String assistantMessage,
+                                    ReasoningTraceView reasoningTrace) {
+        static TurnAnswerResult nextQuestion(String question, InterrogatorTurnResult result) {
+            InterrogatorTurnResult.NextQuestion nextQuestion = result.nextQuestion();
             return new TurnAnswerResult(question, false, nextQuestion.inputMode(), nextQuestion.whyAsking(),
-                    nextQuestion.chipOptions());
+                    nextQuestion.chipOptions(), result.intent(), result.assistantMessage(),
+                    new ReasoningTraceView(result.reasoningTrace().summary(), result.reasoningTrace().decisions(),
+                            result.reasoningTrace().assumptions()));
         }
 
-        static TurnAnswerResult markConcluded() {
-            return new TurnAnswerResult(null, true, null, null, List.of());
+        static TurnAnswerResult markConcluded(InterrogatorTurnResult result) {
+            return new TurnAnswerResult(null, true, null, null, List.of(), result.intent(), result.assistantMessage(),
+                    new ReasoningTraceView(result.reasoningTrace().summary(), result.reasoningTrace().decisions(),
+                            result.reasoningTrace().assumptions()));
         }
     }
 }

@@ -59,7 +59,7 @@ class SessionFlowIntegrationTest {
 
     @Test
     void fullInterviewFlowPersistsCorrectly() throws Exception {
-        User user = userService.findOrCreateFromGoogle("google-test-sub", "test@example.com");
+        User user = userService.findOrCreateFromGoogle("google-test-sub", "test@example.com", null, null);
         String token = tokenService.issueFor(user);
 
         // Turn 1: start a session, expect the restatement-style opening question (StubAiServiceClient)
@@ -107,7 +107,7 @@ class SessionFlowIntegrationTest {
 
     @Test
     void detailEndpointReturnsTheLiveBriefAndSlots() throws Exception {
-        User user = userService.findOrCreateFromGoogle("session-detail-google-sub", "session-detail@example.com");
+        User user = userService.findOrCreateFromGoogle("session-detail-google-sub", "session-detail@example.com", null, null);
         String token = tokenService.issueFor(user);
 
         String startResponse = mockMvc.perform(post("/api/v1/sessions")
@@ -131,7 +131,7 @@ class SessionFlowIntegrationTest {
         List<Object> slots = JsonPath.read(detailResponse, "$.slots");
         assertEquals(9, slots.size(), "8 seed slots + monetization_intent spawned by the first answer");
 
-        User intruder = userService.findOrCreateFromGoogle("session-detail-intruder-sub", "session-detail-intruder@example.com");
+        User intruder = userService.findOrCreateFromGoogle("session-detail-intruder-sub", "session-detail-intruder@example.com", null, null);
         String intruderToken = tokenService.issueFor(intruder);
         mockMvc.perform(get("/api/v1/sessions/" + sessionId).header("Authorization", "Bearer " + intruderToken))
                 .andExpect(status().isForbidden());
@@ -139,7 +139,7 @@ class SessionFlowIntegrationTest {
 
     @Test
     void answerEndpointRejectsAnotherUsersToken() throws Exception {
-        User owner = userService.findOrCreateFromGoogle("session-owner-google-sub", "session-owner@example.com");
+        User owner = userService.findOrCreateFromGoogle("session-owner-google-sub", "session-owner@example.com", null, null);
         String ownerToken = tokenService.issueFor(owner);
         String startResponse = mockMvc.perform(post("/api/v1/sessions")
                         .header("Authorization", "Bearer " + ownerToken)
@@ -149,7 +149,7 @@ class SessionFlowIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         UUID sessionId = UUID.fromString(JsonPath.read(startResponse, "$.sessionId"));
 
-        User intruder = userService.findOrCreateFromGoogle("session-intruder-google-sub", "session-intruder@example.com");
+        User intruder = userService.findOrCreateFromGoogle("session-intruder-google-sub", "session-intruder@example.com", null, null);
         String intruderToken = tokenService.issueFor(intruder);
 
         mockMvc.perform(post("/api/v1/sessions/" + sessionId + "/answer")

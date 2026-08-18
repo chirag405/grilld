@@ -3,12 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiClient } from "@/lib/api-client";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SlidingNumber } from "@/components/ui/sliding-number";
+import { Pricing1, type PricingPlan } from "@/components/ui/pricing-1";
 import {
   Table,
   TableBody,
@@ -20,9 +19,26 @@ import {
 import { UserMenu } from "@/components/UserMenu";
 import { ApiError, type BillingBalance, type CheckoutUrlResponse, type CreditPackage } from "@/lib/types";
 
-const PACKAGES: { id: CreditPackage; label: string; price: string; credits: number; blurb: string }[] = [
-  { id: "STARTER", label: "Starter", price: "$12", credits: 60, blurb: "One full blueprint, plus room to iterate." },
-  { id: "TOPUP", label: "Top-up", price: "$10", credits: 50, blurb: "Exactly one more full blueprint run." },
+const PACKAGES: (PricingPlan & { id: CreditPackage })[] = [
+  {
+    id: "STARTER",
+    title: "Starter",
+    description: "One full blueprint, plus room to iterate.",
+    price: "$12",
+    priceSuffix: "one-time",
+    buttonText: "Buy",
+    features: [{ text: "60 credits" }, { text: "One full blueprint run (50 credits)" }, { text: "10 credits left over" }],
+  },
+  {
+    id: "TOPUP",
+    title: "Top-up",
+    description: "Exactly one more full blueprint run.",
+    price: "$10",
+    priceSuffix: "one-time",
+    buttonText: "Buy",
+    isPopular: true,
+    features: [{ text: "50 credits" }, { text: "One more full blueprint run" }, { text: "No subscription" }],
+  },
 ];
 
 export default function BillingPage() {
@@ -76,7 +92,7 @@ export default function BillingPage() {
         <div>
           <h1 className="text-2xl font-semibold text-ink">Billing</h1>
           <p className="mt-1 text-sm text-ink-soft">
-            A full blueprint run costs 50 credits. New accounts start with 60, free.
+            A full blueprint run costs 50 credits. Every credit is purchased - no free tier.
           </p>
         </div>
 
@@ -96,27 +112,15 @@ export default function BillingPage() {
           </CardHeader>
         </Card>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          {PACKAGES.map((pkg) => (
-            <Card key={pkg.id} className="gap-4">
-              <CardHeader className="px-5">
-                <div className="flex items-center justify-between">
-                  <CardTitle>{pkg.label}</CardTitle>
-                  <Badge variant="outline">{pkg.credits} credits</Badge>
-                </div>
-                <CardDescription>{pkg.blurb}</CardDescription>
-              </CardHeader>
-              <CardContent className="px-5">
-                <div className="flex items-center justify-between">
-                  <span className="text-2xl font-semibold text-ink">{pkg.price}</span>
-                  <Button onClick={() => buy(pkg.id)} disabled={buying !== null}>
-                    {buying === pkg.id ? "Redirecting…" : "Buy"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <Pricing1
+          className="mx-auto max-w-none"
+          plans={PACKAGES.map((pkg) => ({
+            ...pkg,
+            buttonText: buying === pkg.id ? "Redirecting…" : pkg.buttonText,
+          }))}
+          disabled={buying !== null}
+          onSelect={(plan) => buy(plan.id as CreditPackage)}
+        />
 
         {checkoutError && (
           <Alert variant="destructive">

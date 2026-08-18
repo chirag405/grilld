@@ -6,6 +6,8 @@ export type InputMode = "text" | "number" | "chips" | "voice_primary";
 export interface UserProfile {
   id: string;
   email: string;
+  name: string | null;
+  pictureUrl: string | null;
   plan: "FREE" | "STARTER" | "BUILDER" | "PRO" | "TEAM";
   creditsBalance: number;
   createdAt: string;
@@ -17,6 +19,17 @@ export interface SessionStartResult {
   inputMode: InputMode;
   whyAsking: string;
   chipOptions: string[];
+  intent: UserIntent;
+  assistantMessage: string | null;
+  reasoningTrace: ReasoningTrace;
+}
+
+export type UserIntent = "ANSWER" | "QUESTION" | "CORRECTION" | "SKIP" | "FINISH" | "UNRELATED";
+
+export interface ReasoningTrace {
+  summary: string;
+  decisions: string[];
+  assumptions: string[];
 }
 
 export interface TurnAnswerResult {
@@ -25,6 +38,9 @@ export interface TurnAnswerResult {
   inputMode: InputMode | null;
   whyAsking: string | null;
   chipOptions: string[];
+  intent: UserIntent;
+  assistantMessage: string | null;
+  reasoningTrace: ReasoningTrace;
 }
 
 export interface SlotView {
@@ -43,6 +59,24 @@ export interface SessionDetail {
   scaleTier: string | null;
   scaleTierReasoning: string | null;
   slots: SlotView[];
+  reasoningTraces: ReasoningTrace[];
+}
+
+export interface SessionSummary {
+  sessionId: string;
+  rawIdea: string;
+  status: "ACTIVE" | "READY_FOR_GENERATION" | "COMPLETED" | "ABANDONED";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TurnHistoryEntry {
+  turnNumber: number;
+  questionText: string;
+  answerText: string | null;
+  assistantMessage: string | null;
+  inputMode: InputMode | null;
+  reasoningTrace: ReasoningTrace | null;
 }
 
 export interface ScaleCalibrationResult {
@@ -63,6 +97,16 @@ export interface RunReportUpdate {
   failureReason: string | null;
   completedAgents: number;
   totalAgents: number;
+  currentStep: string;
+  steps: GenerationStep[];
+  completedDocuments: string[];
+}
+
+export interface GenerationStep {
+  agentName: string;
+  status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
+  narration: string | null;
+  documents: string[];
 }
 
 export interface PackageStatusResponse {

@@ -78,7 +78,7 @@ class PackagerServiceTest {
     AiServiceClient aiServiceClient;
 
     private UUID freshRunId(String googleId, String email) {
-        User user = userService.findOrCreateFromGoogle(googleId, email);
+        User user = userService.findOrCreateFromGoogle(googleId, email, null, null);
         InterrogatorTurnResult.NextQuestion question = new InterrogatorTurnResult.NextQuestion(
                 "What's the core problem?", List.of("problem_statement"), "FREE_ELICITATION", "text", "opening");
         when(aiServiceClient.nextTurn(ArgumentMatchers.any())).thenReturn(

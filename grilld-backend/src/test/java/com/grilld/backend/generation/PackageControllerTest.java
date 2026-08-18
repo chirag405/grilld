@@ -6,6 +6,7 @@ import com.grilld.backend.aiservice.GenerationResult;
 import com.grilld.backend.aiservice.InterrogatorTurnResult;
 import com.grilld.backend.aiservice.ScaleCalibrationResult;
 import com.grilld.backend.auth.TokenService;
+import com.grilld.backend.billing.CreditService;
 import com.grilld.backend.session.SessionService;
 import com.grilld.backend.user.User;
 import com.grilld.backend.user.UserService;
@@ -71,6 +72,9 @@ class PackageControllerTest {
     @Autowired
     TokenService tokenService;
 
+    @Autowired
+    CreditService creditService;
+
     @MockitoBean
     AiServiceClient aiServiceClient;
 
@@ -85,7 +89,8 @@ class PackageControllerTest {
 
     @Test
     void packageIsReadyAndDownloadableRightAfterGenerate() throws Exception {
-        User user = userService.findOrCreateFromGoogle("package-e2e-google-id", "package-e2e@example.com");
+        User user = userService.findOrCreateFromGoogle("package-e2e-google-id", "package-e2e@example.com", null, null);
+        creditService.grantIdempotent(user.getId(), 60, "test-setup-grant:package-e2e-google-id");
         String token = tokenService.issueFor(user);
 
         InterrogatorTurnResult.NextQuestion question = new InterrogatorTurnResult.NextQuestion(
@@ -135,7 +140,7 @@ class PackageControllerTest {
         }
 
         String intruderToken = tokenService.issueFor(
-                userService.findOrCreateFromGoogle("package-intruder-google-id", "package-intruder@example.com"));
+                userService.findOrCreateFromGoogle("package-intruder-google-id", "package-intruder@example.com", null, null));
         mockMvc.perform(get("/api/v1/sessions/{sessionId}/runs/{runId}/package/download",
                         started.sessionId(), result.runId())
                         .header("Authorization", "Bearer " + intruderToken))

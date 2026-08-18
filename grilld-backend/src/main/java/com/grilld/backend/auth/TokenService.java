@@ -16,7 +16,9 @@ import java.time.temporal.ChronoUnit;
 public class TokenService {
 
     private static final String ISSUER = "grilld";
-    private static final long EXPIRY_HOURS = 24;
+    // 30 days, not 24 hours - a user who logs in once shouldn't have to
+    // re-authenticate with Google every day just to check on a past run.
+    private static final long EXPIRY_HOURS = 24L * 30;
 
     private final JwtEncoder jwtEncoder;
 

@@ -54,7 +54,7 @@ class ContradictionDetectionTest {
 
     @Test
     void conflictingAnswerSpawnsResolutionSlotInsteadOfOverwriting() {
-        User user = userService.findOrCreateFromGoogle("contradiction-test-google-id", "contradiction@example.com");
+        User user = userService.findOrCreateFromGoogle("contradiction-test-google-id", "contradiction@example.com", null, null);
 
         InterrogatorTurnResult.NextQuestion firstQuestion = new InterrogatorTurnResult.NextQuestion(
                 "What's the core problem?", List.of("problem_statement"), "FREE_ELICITATION", "text", "opening");
@@ -109,7 +109,7 @@ class ContradictionDetectionTest {
 
     @Test
     void contradictingANonSeedSlotWithNoBlastRadiusIsFlaggedAsMinor() {
-        User user = userService.findOrCreateFromGoogle("contradiction-minor-google-id", "contradiction-minor@example.com");
+        User user = userService.findOrCreateFromGoogle("contradiction-minor-google-id", "contradiction-minor@example.com", null, null);
 
         InterrogatorTurnResult.NextQuestion firstQuestion = new InterrogatorTurnResult.NextQuestion(
                 "What's the core problem?", List.of("problem_statement"), "FREE_ELICITATION", "text", "opening");

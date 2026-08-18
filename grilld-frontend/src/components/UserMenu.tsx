@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiClient } from "@/lib/api-client";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -15,9 +15,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { UserProfile } from "@/lib/types";
 
-function initialsFor(email: string) {
-  const name = email.split("@")[0];
-  return name.slice(0, 2).toUpperCase();
+function initialsFor(profile: UserProfile) {
+  const source = profile.name?.trim() || profile.email.split("@")[0];
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return source.slice(0, 2).toUpperCase();
 }
 
 /** The one place a logged-in user can see who they are, check their plan/credits, or sign out. */
@@ -36,15 +38,17 @@ export function UserMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger className="rounded-full outline-none ring-accent/40 focus-visible:ring-2">
         <Avatar className="h-8 w-8 cursor-pointer">
+          {profile.pictureUrl && <AvatarImage src={profile.pictureUrl} alt="" />}
           <AvatarFallback className="bg-ink text-xs font-medium text-paper">
-            {initialsFor(profile.email)}
+            {initialsFor(profile)}
           </AvatarFallback>
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel className="flex flex-col gap-1 font-normal">
-          <span className="truncate text-sm font-medium text-ink">{profile.email}</span>
-          <div className="flex items-center gap-2">
+          {profile.name && <span className="truncate text-sm font-medium text-ink">{profile.name}</span>}
+          <span className="truncate text-xs text-ink-soft">{profile.email}</span>
+          <div className="flex items-center gap-2 pt-0.5">
             <Badge variant="outline" className="text-[10px]">{profile.plan}</Badge>
             <span className="font-mono text-xs text-ink-soft">{profile.creditsBalance} credits</span>
           </div>

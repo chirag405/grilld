@@ -6,6 +6,7 @@ import com.grilld.backend.aiservice.GenerationResult;
 import com.grilld.backend.aiservice.InterrogatorTurnResult;
 import com.grilld.backend.aiservice.ScaleCalibrationResult;
 import com.grilld.backend.auth.TokenService;
+import com.grilld.backend.billing.CreditService;
 import com.grilld.backend.session.SessionService;
 import com.grilld.backend.user.User;
 import com.grilld.backend.user.UserService;
@@ -73,6 +74,9 @@ class RunReportControllerTest {
     @Autowired
     TokenService tokenService;
 
+    @Autowired
+    CreditService creditService;
+
     @MockitoBean
     AiServiceClient aiServiceClient;
 
@@ -89,7 +93,10 @@ class RunReportControllerTest {
     }
 
     private CalibratedSession startCalibratedSession(String googleId, String email) {
-        User user = userService.findOrCreateFromGoogle(googleId, email);
+        User user = userService.findOrCreateFromGoogle(googleId, email, null, null);
+        // No free signup grant any more - top up in test setup so generation's
+        // credit pre-authorization has something to spend.
+        creditService.grantIdempotent(user.getId(), 60, "test-setup-grant:" + googleId);
         InterrogatorTurnResult.NextQuestion question = new InterrogatorTurnResult.NextQuestion(
                 "What's the core problem?", List.of("problem_statement"), "FREE_ELICITATION", "text", "opening");
         when(aiServiceClient.nextTurn(ArgumentMatchers.any())).thenReturn(
@@ -122,7 +129,7 @@ class RunReportControllerTest {
     void reportEndpointReturnsThePersistedRunReportOverRealHttp() throws Exception {
         var calibrated = startCalibratedSession("run-report-poll-google-id", "run-report-poll@example.com");
         String token = tokenService.issueFor(userService.findOrCreateFromGoogle(
-                "run-report-poll-google-id", "run-report-poll@example.com"));
+                "run-report-poll-google-id", "run-report-poll@example.com", null, null));
         stubOneAgentRun();
         GenerationService.GenerationRunResult result = generationService.generate(calibrated.sessionId(), calibrated.userId());
 
@@ -142,7 +149,7 @@ class RunReportControllerTest {
     void eventsEndpointStreamsTheFinalStateAndCloses() throws Exception {
         var calibrated = startCalibratedSession("run-report-sse-google-id", "run-report-sse@example.com");
         String token = tokenService.issueFor(userService.findOrCreateFromGoogle(
-                "run-report-sse-google-id", "run-report-sse@example.com"));
+                "run-report-sse-google-id", "run-report-sse@example.com", null, null));
         stubOneAgentRun();
         GenerationService.GenerationRunResult result = generationService.generate(calibrated.sessionId(), calibrated.userId());
 
@@ -167,7 +174,7 @@ class RunReportControllerTest {
         GenerationService.GenerationRunResult result = generationService.generate(calibrated.sessionId(), calibrated.userId());
 
         String intruderToken = tokenService.issueFor(
-                userService.findOrCreateFromGoogle("run-report-intruder-google-id", "run-report-intruder@example.com"));
+                userService.findOrCreateFromGoogle("run-report-intruder-google-id", "run-report-intruder@example.com", null, null));
 
         mockMvc.perform(get("/api/v1/sessions/{sessionId}/runs/{runId}/report", calibrated.sessionId(), result.runId())
                         .header("Authorization", "Bearer " + intruderToken))

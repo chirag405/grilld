@@ -52,8 +52,8 @@ class BillingControllerTest {
     TokenService tokenService;
 
     @Test
-    void balanceReturnsTheFreeSignupGrantForABrandNewUser() throws Exception {
-        User user = userService.findOrCreateFromGoogle("billing-balance-google-id", "billing-balance@example.com");
+    void balanceStartsAtZeroForABrandNewUser() throws Exception {
+        User user = userService.findOrCreateFromGoogle("billing-balance-google-id", "billing-balance@example.com", null, null);
         String token = tokenService.issueFor(user);
 
         String body = mockMvc.perform(get("/api/v1/billing/balance").header("Authorization", "Bearer " + token))
@@ -61,7 +61,7 @@ class BillingControllerTest {
                 .andReturn().getResponse().getContentAsString();
 
         Integer balance = JsonPath.read(body, "$.creditsBalance");
-        assertEquals(60, balance);
+        assertEquals(0, balance);
     }
 
     @Test
@@ -71,7 +71,7 @@ class BillingControllerTest {
 
     @Test
     void checkoutUrlPointsAtTheConfiguredStoreAndVariantWithTheUserIdEmbedded() throws Exception {
-        User user = userService.findOrCreateFromGoogle("billing-checkout-google-id", "billing-checkout@example.com");
+        User user = userService.findOrCreateFromGoogle("billing-checkout-google-id", "billing-checkout@example.com", null, null);
         String token = tokenService.issueFor(user);
 
         String body = mockMvc.perform(get("/api/v1/billing/checkout-url")

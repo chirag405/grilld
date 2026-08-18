@@ -22,9 +22,9 @@ export async function GET(request: NextRequest) {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    // Matches TokenService.EXPIRY_HOURS (grilld-backend) - the cookie shouldn't
-    // outlive the JWT it holds.
-    maxAge: 60 * 60 * 24,
+    // Matches TokenService.EXPIRY_HOURS (grilld-backend, 30 days) - the cookie
+    // shouldn't outlive the JWT it holds.
+    maxAge: 60 * 60 * 24 * 30,
   });
   return response;
 }

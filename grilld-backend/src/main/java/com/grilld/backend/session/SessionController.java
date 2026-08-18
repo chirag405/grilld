@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -42,9 +43,20 @@ public class SessionController {
         return sessionService.startSession(userId, request.rawIdea());
     }
 
+    @GetMapping
+    public List<SessionService.SessionSummary> list(@AuthenticationPrincipal Jwt jwt) {
+        return sessionService.listSessions(UUID.fromString(jwt.getSubject()));
+    }
+
     @GetMapping("/{sessionId}")
     public SessionService.SessionDetail detail(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
         return sessionService.getSessionDetail(sessionId, UUID.fromString(jwt.getSubject()));
+    }
+
+    @GetMapping("/{sessionId}/turns")
+    public List<SessionService.TurnHistoryEntry> turns(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
+        sessionService.verifyOwnership(sessionId, UUID.fromString(jwt.getSubject()));
+        return sessionService.getTurnHistory(sessionId);
     }
 
     @PostMapping("/{sessionId}/answer")

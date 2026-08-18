@@ -45,8 +45,10 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
         OAuth2User oAuth2User = (OAuth2User) authentication.getPrincipal();
         String googleId = oAuth2User.getName(); // the "sub" claim - Google's stable unique ID for this account
         String email = oAuth2User.getAttribute("email");
+        String name = oAuth2User.getAttribute("name");
+        String picture = oAuth2User.getAttribute("picture");
 
-        User user = userService.findOrCreateFromGoogle(googleId, email);
+        User user = userService.findOrCreateFromGoogle(googleId, email, name, picture);
         String token = tokenService.issueFor(user);
 
         String redirectUrl = UriComponentsBuilder.fromUriString(frontendBaseUrl)

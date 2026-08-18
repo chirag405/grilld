@@ -54,7 +54,7 @@ class RubricGateTest {
 
     @Test
     void acceptedRubricActuallyConcludesTheSession() {
-        User user = userService.findOrCreateFromGoogle("rubric-accept-google-id", "rubric-accept@example.com");
+        User user = userService.findOrCreateFromGoogle("rubric-accept-google-id", "rubric-accept@example.com", null, null);
 
         InterrogatorTurnResult.NextQuestion firstQuestion = new InterrogatorTurnResult.NextQuestion(
                 "What's the core problem?", List.of("problem_statement"), "FREE_ELICITATION", "text", "opening");
@@ -82,7 +82,7 @@ class RubricGateTest {
 
     @Test
     void rejectedRubricAsksOneMoreTargetedQuestionInsteadOfConcluding() {
-        User user = userService.findOrCreateFromGoogle("rubric-reject-google-id", "rubric-reject@example.com");
+        User user = userService.findOrCreateFromGoogle("rubric-reject-google-id", "rubric-reject@example.com", null, null);
 
         InterrogatorTurnResult.NextQuestion firstQuestion = new InterrogatorTurnResult.NextQuestion(
                 "What's the core problem?", List.of("problem_statement"), "FREE_ELICITATION", "text", "opening");

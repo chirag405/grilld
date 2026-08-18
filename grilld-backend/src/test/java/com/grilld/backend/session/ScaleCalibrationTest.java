@@ -51,7 +51,7 @@ class ScaleCalibrationTest {
 
     @Test
     void calibrationPersistsTierAndReasoningUnmarkedAsOverridden() {
-        User user = userService.findOrCreateFromGoogle("calibration-google-id", "calibration@example.com");
+        User user = userService.findOrCreateFromGoogle("calibration-google-id", "calibration@example.com", null, null);
         InterrogatorTurnResult.NextQuestion question = new InterrogatorTurnResult.NextQuestion(
                 "What's the core problem?", List.of("problem_statement"), "FREE_ELICITATION", "text", "opening");
         when(aiServiceClient.nextTurn(ArgumentMatchers.any())).thenReturn(
@@ -73,7 +73,7 @@ class ScaleCalibrationTest {
 
     @Test
     void userOverrideMarksTierAsOverriddenAndKeepsReasoning() {
-        User user = userService.findOrCreateFromGoogle("override-google-id", "override@example.com");
+        User user = userService.findOrCreateFromGoogle("override-google-id", "override@example.com", null, null);
         InterrogatorTurnResult.NextQuestion question = new InterrogatorTurnResult.NextQuestion(
                 "What's the core problem?", List.of("problem_statement"), "FREE_ELICITATION", "text", "opening");
         when(aiServiceClient.nextTurn(ArgumentMatchers.any())).thenReturn(

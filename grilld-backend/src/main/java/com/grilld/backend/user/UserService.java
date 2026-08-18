@@ -19,15 +19,15 @@ public class UserService {
     }
 
     /**
-     * First login from a given Google account creates the user (and grants the
-     * free credit signup bonus, via User's default). Every login after that
-     * just looks the existing row up. This is the anti-abuse gate from
-     * docs/product-and-architecture.md §10 - the free grant is only ever
-     * reachable through a real Google account, never a bare signup form.
+     * First login from a given Google account creates the user (0 credits -
+     * every credit is purchased, see CreditService). Every login after that
+     * just looks the existing row up and refreshes their Google profile info.
      */
     @Transactional
-    public User findOrCreateFromGoogle(String googleId, String email) {
-        return userRepository.findByGoogleId(googleId)
-                .orElseGet(() -> userRepository.save(new User(email, googleId)));
+    public User findOrCreateFromGoogle(String googleId, String email, String name, String pictureUrl) {
+        User user = userRepository.findByGoogleId(googleId)
+                .orElseGet(() -> new User(email, googleId));
+        user.updateProfile(name, pictureUrl);
+        return userRepository.save(user);
     }
 }

@@ -70,8 +70,11 @@ class CreditServiceTest {
     @MockitoBean
     AiServiceClient aiServiceClient;
 
+    /** No free signup grant any more - tests that need a spendable balance top up explicitly. */
     private User freshUser(String googleId, String email) {
-        return userService.findOrCreateFromGoogle(googleId, email);
+        User user = userService.findOrCreateFromGoogle(googleId, email, null, null);
+        creditService.grantIdempotent(user.getId(), 60, "test-setup-grant:" + googleId);
+        return user;
     }
 
     /** credit_transactions.run_id is a real FK to generation_runs - these tests need an actual row, not a random UUID. */
@@ -100,7 +103,7 @@ class CreditServiceTest {
 
         assertEquals(10, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance());
         List<CreditTransaction> transactions = creditTransactionRepository.findByUserIdOrderByCreatedAtDesc(user.getId());
-        assertEquals(1, transactions.size());
+        assertEquals(2, transactions.size(), "the test-setup grant plus this deduction");
         assertEquals(-50, transactions.get(0).getDelta());
         assertEquals(runId, transactions.get(0).getRunId());
     }
@@ -114,8 +117,8 @@ class CreditServiceTest {
 
         assertEquals(60, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance(),
                 "a refused deduction must not touch the balance");
-        assertTrue(creditTransactionRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).isEmpty(),
-                "a refused deduction must not leave an audit row either");
+        assertEquals(1, creditTransactionRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).size(),
+                "a refused deduction must not leave an audit row either - only the test-setup grant should exist");
     }
 
     @Test
@@ -143,7 +146,7 @@ class CreditServiceTest {
         assertTrue(firstGrant);
         assertFalse(secondGrant, "a redelivered webhook must not double-credit the account");
         assertEquals(110, userRepository.findById(user.getId()).orElseThrow().getCreditsBalance(),
-                "60 free-signup grant + 50 from exactly one purchase grant");
+                "60 test-setup grant + 50 from exactly one purchase grant");
         assertEquals(1, creditTransactionRepository.findByUserIdOrderByCreatedAtDesc(user.getId())
                 .stream().filter(t -> t.getReason().equals(reason)).count());
     }

@@ -114,7 +114,10 @@ class GenerationServiceTest {
     }
 
     private CalibratedSession startCalibratedSession(String googleId, String email) {
-        User user = userService.findOrCreateFromGoogle(googleId, email);
+        User user = userService.findOrCreateFromGoogle(googleId, email, null, null);
+        // No free signup grant any more - top up in test setup so generation's
+        // credit pre-authorization has something to spend.
+        creditService.grantIdempotent(user.getId(), 60, "test-setup-grant:" + googleId);
         InterrogatorTurnResult.NextQuestion question = new InterrogatorTurnResult.NextQuestion(
                 "What's the core problem?", List.of("problem_statement"), "FREE_ELICITATION", "text", "opening");
         when(aiServiceClient.nextTurn(ArgumentMatchers.any())).thenReturn(
@@ -180,7 +183,7 @@ class GenerationServiceTest {
         assertEquals(AgentExecution.Status.COMPLETED, marketExecution.getStatus());
         assertEquals("/docs/MARKET_ANALYSIS.md", marketExecution.getOutputRef());
 
-        // Phase 7: a completed run keeps its charge - free signup grant (60) minus
+        // Phase 7: a completed run keeps its charge - the test-setup grant (60) minus
         // the flat full-blueprint cost (50, GenerationService.FULL_BLUEPRINT_CREDITS).
         assertEquals(GenerationService.FULL_BLUEPRINT_CREDITS, run.getCreditsCharged());
         User reloadedUser = userRepository.findById(calibrated.userId()).orElseThrow();
@@ -278,7 +281,7 @@ class GenerationServiceTest {
 
     @Test
     void generatingWithoutCalibrationFailsFast() {
-        User user = userService.findOrCreateFromGoogle("gen-no-tier-google-id", "gen-no-tier@example.com");
+        User user = userService.findOrCreateFromGoogle("gen-no-tier-google-id", "gen-no-tier@example.com", null, null);
         InterrogatorTurnResult.NextQuestion question = new InterrogatorTurnResult.NextQuestion(
                 "What's the core problem?", List.of("problem_statement"), "FREE_ELICITATION", "text", "opening");
         when(aiServiceClient.nextTurn(ArgumentMatchers.any())).thenReturn(
@@ -308,7 +311,7 @@ class GenerationServiceTest {
     @Test
     void generateRefusesAnotherUsersSession() {
         var calibrated = startCalibratedSession("gen-owner-google-id", "gen-owner@example.com");
-        User otherUser = userService.findOrCreateFromGoogle("gen-intruder-google-id", "gen-intruder@example.com");
+        User otherUser = userService.findOrCreateFromGoogle("gen-intruder-google-id", "gen-intruder@example.com", null, null);
 
         assertThrows(AccessDeniedException.class,
                 () -> generationService.generate(calibrated.sessionId(), otherUser.getId()));
