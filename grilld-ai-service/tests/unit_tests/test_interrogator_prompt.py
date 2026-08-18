@@ -14,18 +14,25 @@ def _base_state(**overrides):
     return state
 
 
-def test_detected_vague_term_names_it_explicitly():
+def test_detected_vague_term_does_not_force_concretization():
     prompt = _build_prompt(_base_state(vague_terms_found=["fast"]))
     assert "VAGUENESS DETECTED" in prompt
     assert "fast" in prompt
-    assert "technique=CONCRETIZATION" in prompt
+    assert "materially change the blueprint" in prompt
 
 
-def test_no_detected_term_still_instructs_model_to_use_own_judgment():
+def test_no_detected_term_does_not_manufacture_more_questions():
     # This is the actual fix: even when the deterministic regex list finds
     # nothing, the model must still be told to apply its own judgment for
     # vague language the fixed list doesn't cover - not silently pass it through.
     prompt = _build_prompt(_base_state(vague_terms_found=[]))
     assert "VAGUENESS DETECTED" not in prompt
-    assert "use your own judgment" in prompt
-    assert "technique=CONCRETIZATION" in prompt
+    assert "Do not manufacture a need" in prompt
+
+
+def test_prompt_honors_delegation_and_finish_requests():
+    prompt = _build_prompt(_base_state())
+    assert "decide for them" in prompt
+    assert "stop asking" in prompt
+    assert "set ready_to_conclude=true" in prompt
+    assert "Aim for 3-6 useful questions" in prompt

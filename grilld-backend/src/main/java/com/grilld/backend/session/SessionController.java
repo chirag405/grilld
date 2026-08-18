@@ -66,6 +66,16 @@ public class SessionController {
         sessionService.forceConclude(sessionId);
     }
 
+    @PutMapping("/{sessionId}/slots/{slotKey}")
+    public void editSlot(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId,
+                         @PathVariable String slotKey, @Valid @RequestBody EditSlotRequest request) {
+        sessionService.verifyOwnership(sessionId, UUID.fromString(jwt.getSubject()));
+        sessionService.editSlot(sessionId, slotKey, request.value());
+    }
+
+    public record EditSlotRequest(@jakarta.validation.constraints.NotBlank String value) {
+    }
+
     @PutMapping("/{sessionId}/scale-tier")
     public void overrideScaleTier(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId,
                                    @Valid @RequestBody OverrideScaleTierRequest request) {

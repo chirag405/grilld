@@ -98,6 +98,17 @@ public class Slot {
         this.status = Status.FILLED;
     }
 
+    public void waive() {
+        this.status = Status.WAIVED;
+        this.value = null;
+    }
+
+    public void editValue(String value) {
+        this.value = value;
+        this.confidence = 1.0;
+        this.status = Status.FILLED;
+    }
+
     /** Records that filling/changing this slot is what caused {@code childSlotKey} to be spawned - the RevisionClassifier's blast-radius traversal (docs/decisions-and-technical-architecture.md §7). */
     public void addUnlockedSlot(String childSlotKey) {
         List<String> updated = new ArrayList<>(this.unlocks);

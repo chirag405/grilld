@@ -108,6 +108,11 @@ public class SessionService {
                 .orElseThrow(() -> new ResourceNotFoundException("Session " + sessionId + " has no pending turn"));
         pendingTurn.recordAnswer(answerText);
 
+        if (requestsImmediateConclusion(answerText)) {
+            session.markReadyForGeneration();
+            return TurnAnswerResult.markConcluded();
+        }
+
         WorkingContext context = contextAssembler.assemble(sessionId);
         InterrogatorTurnResult result = aiServiceClient.nextTurn(context);
 
@@ -141,6 +146,26 @@ public class SessionService {
         DiscoverySession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("No session " + sessionId));
         session.markReadyForGeneration();
+    }
+
+    @Transactional
+    public void editSlot(UUID sessionId, String slotKey, String value) {
+        Slot slot = slotRepository.findBySessionIdAndSlotKey(sessionId, slotKey)
+                .orElseThrow(() -> new ResourceNotFoundException("No slot " + slotKey + " for session " + sessionId));
+        slot.editValue(value);
+        slotRepository.save(slot);
+        ObjectNode patch = objectMapper.createObjectNode();
+        patch.put(slotKey, value);
+        mergeBriefJson(sessionId, patch);
+    }
+
+    private boolean requestsImmediateConclusion(String answerText) {
+        String normalized = answerText.toLowerCase();
+        return normalized.contains("finish it") || normalized.contains("finish now")
+                || normalized.contains("proceed to end") || normalized.contains("procced to end")
+                || normalized.contains("stop asking") || normalized.contains("no more question")
+                || normalized.contains("will not answer anymore") || normalized.contains("won't answer anymore")
+                || normalized.contains("decide the app feature") || normalized.contains("just generate");
     }
 
     /**
@@ -288,6 +313,13 @@ public class SessionService {
                             });
                 }
             }
+        }
+
+        for (InterrogatorTurnResult.WaivedSlot waivedSlot : result.waivedSlots()) {
+            slotRepository.findBySessionIdAndSlotKey(sessionId, waivedSlot.key()).ifPresent(slot -> {
+                slot.waive();
+                slotRepository.save(slot);
+            });
         }
 
         mergeBriefJson(sessionId, briefPatch);
