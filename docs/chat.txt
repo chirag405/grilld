@@ -1,0 +1,128 @@
+a tool for freelander to track unpaid invoices
+So you want to build an invoice-tracking tool specifically for freelancers who are owed money and losing track of who hasn't paid. A few inferences I'm making: (1) this is aimed at solo freelancers, not agencies or small studios with accounting staff; (2) the core pain is chasing payment after the invoice is sent, not generating the invoice itself; and (3) you're building this for someone else to use, not primarily for your own freelance work. What did I get wrong?
+
+why is Grilld asking this?
+good
+How many freelancers are you expecting to use this — are we talking 10 beta testers, 500 signups in year one, something else? Give me a number, even a rough one.
+
+why is Grilld asking this?
+200
+Is 200 a year-one target, or is that when you'd consider this thing done and stable?
+
+why is Grilld asking this?
+Just a rough guess, no real timeline
+What has to be true for you to call this done — like, what's the moment you'd look at it and say 'yes, this works'?
+
+why is Grilld asking this?
+when my server starts overheating
+Server overheating means you're thinking about traffic load as the win condition - but is that the actual goal, or is there something more specific underneath it, like a certain number of paying users, or hitting a revenue number?
+
+why is Grilld asking this?
+i was sayign that ina sarcastic way
+Fair enough - are you building this solo, or is there anyone else involved?
+
+why is Grilld asking this?
+Me + one other
+What's the other person's role - are they technical, or more on the product/design/business side?
+
+why is Grilld asking this?
+Also technical
+Is there a date you're working toward, or is this more 'ship it when it's ready'?
+
+why is Grilld asking this?
+No date yet
+Any hard constraints on the build - budget ceiling, specific tools or systems you have to integrate with, anything that's genuinely off the table?
+
+why is Grilld asking this?
+no
+With two technical people and no hard deadline - how are you splitting the work? Are you both building in the same area, or do you own different parts of the stack?
+
+why is Grilld asking this?
+Same area, collaborating closely
+There are a few open questions about scale and team shape from earlier in the conversation - your answers shifted a bit as we went. On scale: the ~200 users figure - is that an actual target you're designing toward, or more of a first-pass guess you'd throw out if pushed?
+
+why is Grilld asking this?
+Real target, designing to it
+You said 200 users is a real target - what does that look like in terms of activity? Roughly how many invoices does a typical user have in flight at once, and how often are they chasing payment?
+
+why is Grilld asking this?
+4-5
+What would tell you this project has failed - not underperformed, actually failed? Give me something specific enough that you'd know it the day it happened.
+
+why is Grilld asking this?
+i dont know
+You said you don't know what failure looks like - that's actually useful to know. Let me try a different angle: is there something this project could do that would make you wish you'd never built it?
+
+why is Grilld asking this?
+skip this questio
+Tools like FreshBooks, Wave, and even just a spreadsheet already do invoice tracking. What's your read on why someone would pick yours over those - or is competing with them not something you've thought about yet?
+
+why is Grilld asking this?
+i will be making it cheaper and have feature like agentic ai which not everyone provides
+When you say 'agentic AI' - what does it actually do? Like, walk me through one thing it would do for a user without them having to ask.
+
+why is Grilld asking this?
+like a voice chat bot like siri whic hhandles everything for the user
+When you say it 'handles everything' - give me one concrete example. Like, a user gets a late invoice. What does the voice bot actually do next, step by step?
+
+why is Grilld asking this?
+u tell me i am not having any answer for it
+That's honest - and actually useful to know. So right now the AI side is more of a vision than a built-out plan. If you had to ship v1 without the voice bot, what would still make it worth building?
+
+why is Grilld asking this?
+yes
+You said yes - so what's the core of v1? If you shipped it tomorrow without any AI, what's the one thing it actually does that makes a user say 'I need this'?
+
+why is Grilld asking this?
+pls procced further decide the app feature byyourself
+You've told me the problem, the users, the rough size - that's a real foundation. One last thing: what would have to happen for you to look back in 6 months and say 'this project failed'? Not just slow growth - something specific that would make you feel like it was the wrong thing to build.
+
+why is Grilld asking this?
+we will be giving the mvp with some free credit to public user to verify it , gettinguser feedback
+When you give those free credits and users try it - what's the one thing, if they don't do it or don't come back for, that tells you the MVP missed?
+
+why is Grilld asking this?
+yes
+You said you'll give free credits and collect feedback. But feedback can say anything - what's the one user action that would make you say 'it's working'? Like: they came back a second time, or a payment actually got chased down, or something else specific.
+
+why is Grilld asking this?
+They came back without being prompted, They told someone else to use it
+You said 200 users earlier - is that a real number you're designing for, or was it more of a rough way of saying 'some people'?
+
+why is Grilld asking this?
+Rough guess - could be 50 or 500
+You said 'came back without being prompted' and 'told someone else' - those are two different signals. If you had to pick just one that would make you feel the thing actually worked, which one is it?
+
+why is Grilld asking this?
+Came back on their own, Told someone else to use it
+You said both - came back on their own and told someone else. Are those happening at the same time in your head, or is one the thing that proves it works and the other just a nice bonus?
+
+why is Grilld asking this?
+Came back = proof, referral = bonus
+You said 'came back on their own' is the proof it worked. What does that look like in practice - how would you actually know they came back without being prompted? Like, is there a log you'd check, a message they'd send, something else?
+
+why is Grilld asking this?
+it would be ther in databse , analytics service and procceed to end dont ask anymore question
+You've told me what you're building - but what's definitely NOT in v1? Like, is the voice bot in, or is that something you're leaving out for now?
+
+why is Grilld asking this?
+Voice bot is out of v1
+You mentioned the tech side is still vague - what are you actually building this in? Like, what language, framework, or platform are you starting from?
+
+why is Grilld asking this?
+nextjs and i will not anwser anymore question just finish it
+That’s enough to work with.
+
+interview complete
+0123456789
+0123456789
+credits
+Scale: T1
+
+Two-person team with no fixed timeline, 200-user scale expectation, and pre-revenue MVP validation approach (free credits + feedback) clearly lands this in Solo Indie / MVP territory. Revenue intent exists but is aspirational and unproven, and the core product scope is well-contained — the differentiating "agentic AI" feature is explicitly out of v1 and undefined.
+
+Run Report
+
+IN_PROGRESS
+✓ Interrogation complete — brief finalized (T1, Solo Indie MVP)
+Queued: Market Analyst, Competition Analyst, Strategy Agent, Tech Architect, Infra Agent, Diagram Agent, Roadmap Agent, Skills Curator, Agent-File Writer, Consistency Auditor

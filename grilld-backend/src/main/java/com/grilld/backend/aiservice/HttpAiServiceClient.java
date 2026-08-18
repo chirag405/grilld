@@ -425,6 +425,11 @@ public class HttpAiServiceClient implements AiServiceClient {
 
         boolean readyToConclude = Boolean.TRUE.equals(turnResult.get("ready_to_conclude"));
 
+        InterrogatorTurnResult.ReasoningTrace reasoningTrace = new InterrogatorTurnResult.ReasoningTrace(
+                (String) turnResult.get("reasoning_summary"),
+                (List<String>) turnResult.getOrDefault("reasoning_decisions", List.of()),
+                (List<String>) turnResult.getOrDefault("reasoning_assumptions", List.of()));
+
         InterrogatorTurnResult.NextQuestion nextQuestion = null;
         Map<String, Object> questionMap = (Map<String, Object>) turnResult.get("next_question");
         if (questionMap != null) {
@@ -438,6 +443,8 @@ public class HttpAiServiceClient implements AiServiceClient {
                     chipOptions == null ? List.of() : chipOptions);
         }
 
-        return new InterrogatorTurnResult(extractedFacts, newSlots, waivedSlots, nextQuestion, readyToConclude);
+        return new InterrogatorTurnResult(extractedFacts, newSlots, waivedSlots,
+                (String) turnResult.get("intent"), (String) turnResult.get("assistant_message"),
+                reasoningTrace, nextQuestion, readyToConclude);
     }
 }

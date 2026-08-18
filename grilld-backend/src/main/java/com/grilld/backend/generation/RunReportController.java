@@ -41,11 +41,7 @@ public class RunReportController {
     public RunReportUpdate report(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID runId) {
         verifyOwnership(runId, jwt);
         GenerationRun run = findRun(runId);
-        long completed = agentExecutionRepository.findByRunIdOrderByStartedAtAsc(runId).stream()
-                .filter(execution -> execution.getStatus() == AgentExecution.Status.COMPLETED)
-                .count();
-        return new RunReportUpdate(run.getStatus().name(), run.getRunReportMd(), run.getFailureReason(),
-                completed, RunReportService.AGENT_ROSTER.size());
+        return RunReportUpdate.from(run, agentExecutionRepository.findByRunIdOrderByStartedAtAsc(runId));
     }
 
     @GetMapping(path = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

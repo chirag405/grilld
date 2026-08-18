@@ -1,4 +1,5 @@
 .env
+e2e-output/
 .venv/
 __pycache__/
 *.py[cod]

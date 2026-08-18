@@ -56,12 +56,9 @@ public class RunReportBroadcaster {
 
     private void send(SseEmitter emitter, GenerationRun run) {
         try {
-            long completed = agentExecutionRepository.findByRunIdOrderByStartedAtAsc(run.getId()).stream()
-                    .filter(execution -> execution.getStatus() == AgentExecution.Status.COMPLETED)
-                    .count();
             emitter.send(SseEmitter.event().name("report")
-                    .data(new RunReportUpdate(run.getStatus().name(), run.getRunReportMd(), run.getFailureReason(),
-                            completed, RunReportService.AGENT_ROSTER.size())));
+                    .data(RunReportUpdate.from(run,
+                            agentExecutionRepository.findByRunIdOrderByStartedAtAsc(run.getId()))));
             if (run.getStatus() != GenerationRun.Status.IN_PROGRESS) {
                 emitter.complete();
             }

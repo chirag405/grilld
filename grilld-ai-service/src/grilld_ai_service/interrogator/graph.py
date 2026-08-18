@@ -7,9 +7,8 @@ generation are different lifecycle phases called by Spring differently (one
 call per interview turn vs. one call per whole generation run), not a single
 workflow.
 
-Two nodes: check_vagueness (deterministic, cheap) -> generate_turn (the actual
-LLM call, structured output). No contradiction-detection node here - that
-needs the full stored brief, which only Java has; see
+One semantic generate_turn node performs the actual structured LLM call. No
+contradiction-detection node here - that needs the full stored brief, which only Java has; see
 SessionService.applyExtraction() in grilld-backend.
 """
 
@@ -20,7 +19,6 @@ from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
 from grilld_ai_service.interrogator.schemas import InterrogatorTurnResult
-from grilld_ai_service.interrogator.vagueness import detect_vagueness
 from grilld_ai_service.model_tiers import model_for
 
 
@@ -34,16 +32,8 @@ class InterrogatorState(TypedDict, total=False):
     answered_topics: list[str]
     open_gaps: list[str]  # set only when the Rubric Agent just rejected a conclude attempt
 
-    # Intermediate (check_vagueness's output, generate_turn's input)
-    vague_terms_found: list[str]
-
     # Output - the JSON Spring's HttpAiServiceClient reads directly.
     turn_result: dict
-
-
-def check_vagueness(state: InterrogatorState) -> dict:
-    last_answer = state["recent_turns"][0]["answer_text"] if state.get("recent_turns") else None
-    return {"vague_terms_found": detect_vagueness(last_answer)}
 
 
 def _build_prompt(state: InterrogatorState) -> str:
@@ -57,7 +47,6 @@ def _build_prompt(state: InterrogatorState) -> str:
         for t in reversed(state.get("recent_turns", []))
     ) or "(none - this is the opening turn)"
     answered_text = ", ".join(state.get("answered_topics", [])) or "(none)"
-    vague_terms = state.get("vague_terms_found", [])
 
     opening_instruction = ""
     if is_opening:
@@ -68,26 +57,9 @@ they put it, with exactly 2-3 non-obvious inferences flagged as inferences.
 End with "What did I get wrong?" Use technique=ASSUMPTION_SURFACING,
 input_mode=text. extracted_facts and new_slots should be empty - there's
 nothing to extract yet, you're generating the first question, not processing
-an answer.
-"""
-
-    # detect_vagueness is a cheap, deterministic, guaranteed-catch pre-filter
-    # for a fixed list of common vague terms - not the ceiling on what counts
-    # as vague. It will never cover every vague phrasing ("seamless",
-    # "intuitive", "as needed", "some users", ...), so the model always gets
-    # a standing instruction to apply its own judgment too, on top of
-    # whatever the deterministic check already flagged.
-    if vague_terms:
-        vagueness_instruction = f"""
-VAGUENESS DETECTED in the last answer (matched a known vague-term list): {", ".join(vague_terms)}
-Treat this as a possible gap, not a reason to cross-examine the user. Only ask
-for a concrete example when it would materially change the blueprint; otherwise
-record a sensible assumption and move on.
-"""
-    else:
-        vagueness_instruction = """
-No vague terms matched the fixed known-term list. Do not manufacture a need for
-more precision when a reasonable product assumption will do.
+an answer. You MUST set ready_to_conclude=false and provide next_question.
+For this system-generated opening only, set intent=ANSWER and use
+assistant_message for the brief restatement that introduces next_question.
 """
 
     open_gaps = state.get("open_gaps") or []
@@ -118,13 +90,16 @@ RECENT EXCHANGE (most recent first):
 
 ALREADY COVERED — never revisit:
 {answered_text}
-{opening_instruction}{vagueness_instruction}{rubric_rejection_instruction}
+{opening_instruction}{rubric_rejection_instruction}
 YOUR TURN:
-1. Extract every fact from their last answer (skip this on the opening turn - see above). Map to existing slots by key.
-2. Waive slots their answer made irrelevant. Be aggressive - dead questions kill trust.
-3. Choose ONE next question only when its answer would materially change the product, architecture,
+1. Understand the semantic intent of the user's whole message in context and set intent to exactly one of:
+   ANSWER, QUESTION, CORRECTION, SKIP, FINISH, or UNRELATED. Never classify by keyword matching.
+2. Extract every fact from their last answer (skip this on the opening turn). Map to existing slots by key.
+3. Waive slots their answer made irrelevant. Be aggressive - dead questions kill trust.
+4. Choose ONE next question only when its answer would materially change the product, architecture,
    or delivery plan. Otherwise fill low-risk gaps with explicit ASSUMED facts and conclude.
-4. Match their vocabulary level exactly.
+5. Return reasoning_summary, reasoning_decisions, and reasoning_assumptions as a concise, user-safe
+   audit trail. Never expose hidden chain-of-thought, token-by-token deliberation, or private scratch work.
 
 RULES:
 - One question. Never stack.
@@ -136,10 +111,21 @@ RULES:
 - Treat sarcasm, frustration, terse answers, and spelling mistakes charitably; do not literalize jokes.
 - If the user says to decide for them, proceed, finish, stop asking, or otherwise delegates decisions,
   infer sensible defaults, set ready_to_conclude=true, and do not ask another question.
+- For QUESTION, answer it directly in assistant_message. Unless the answer makes the pending discovery
+  question irrelevant, you MUST copy that pending discovery question into next_question so the UI can
+  resume it; do not hide the resumed question inside assistant_message.
+- For CORRECTION, acknowledge and apply the correction before choosing what comes next.
+- For FINISH, set ready_to_conclude=true. For SKIP, waive the targeted slot without pressure.
+- For UNRELATED, answer briefly when safe and simple; otherwise explain the product-discovery boundary,
+  then gently resume. Never pretend to have tools, live data, or expertise you do not have.
+- assistant_message is always required. It MUST contain the direct answer for QUESTION and UNRELATED,
+  acknowledge the change for CORRECTION, and briefly acknowledge ANSWER, SKIP, or FINISH.
 - Aim for 3-6 useful questions total. More than 8 is a failure unless resolving a direct contradiction.
 - Reference what they actually said - this must feel like listening, not processing.
 - Max 3 levels of "why" on any laddering thread; stop at a terminal value.
 - No question without a target slot in targets_slots.
+- Unless ready_to_conclude=true, next_question is REQUIRED. Never return both
+  ready_to_conclude=false and next_question=null.
 - If the interview has covered enough ground (most high-importance slots filled, no more open high-priority slots), set ready_to_conclude=true instead of asking another question.
 - If their last answer is a plain skip/decline ("skip", "I don't know", "not sure", "I'd rather not say", "N/A", or similar - use your judgment, not a fixed word list), do NOT push back or re-ask. Waive the targeted slot(s), then conclude if the remaining gaps can safely become assumptions.
 - If you set input_mode=chips, chip_options must be 2-6 short, concrete, mutually exclusive answers to YOUR question specifically - grounded in what they've already told you, never generic filler like "Option A". If you can't write real options for this exact question, use input_mode=text instead - an empty/fake chip list is worse than no chips.
@@ -172,10 +158,8 @@ async def generate_turn(state: InterrogatorState) -> dict:
 
 def build_graph():
     graph = StateGraph(InterrogatorState)
-    graph.add_node("check_vagueness", check_vagueness)
     graph.add_node("generate_turn", generate_turn)
-    graph.add_edge(START, "check_vagueness")
-    graph.add_edge("check_vagueness", "generate_turn")
+    graph.add_edge(START, "generate_turn")
     graph.add_edge("generate_turn", END)
     return graph.compile()
 

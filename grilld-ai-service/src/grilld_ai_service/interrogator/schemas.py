@@ -22,6 +22,7 @@ Technique = Literal[
 InputMode = Literal["voice_primary", "chips", "number", "text"]
 
 SlotOrigin = Literal["SEED", "DERIVED", "PROBE"]
+UserIntent = Literal["ANSWER", "QUESTION", "CORRECTION", "SKIP", "FINISH", "UNRELATED"]
 
 
 class ExtractedFact(BaseModel):
@@ -64,5 +65,18 @@ class InterrogatorTurnResult(BaseModel):
     extracted_facts: list[ExtractedFact] = Field(default_factory=list)
     new_slots: list[NewSlot] = Field(default_factory=list)
     waived_slots: list[WaivedSlot] = Field(default_factory=list)
+    intent: UserIntent
+    assistant_message: str = Field(
+        description=(
+            "A direct helpful response to the user. Required and non-empty for QUESTION, "
+            "CORRECTION, and UNRELATED; use a brief acknowledgement for other intents."
+        )
+    )
+    # Flat fields are intentional: Haiku's tool-style structured output is
+    # reliable for scalar/list parameters but may serialize a nested Pydantic
+    # object as XML-like text. Spring recomposes these into a ReasoningTrace.
+    reasoning_summary: str = Field(description="One sentence explaining what Grilld understood and decided.")
+    reasoning_decisions: list[str] = Field(default_factory=list)
+    reasoning_assumptions: list[str] = Field(default_factory=list)
     next_question: NextQuestion | None = None
     ready_to_conclude: bool = False

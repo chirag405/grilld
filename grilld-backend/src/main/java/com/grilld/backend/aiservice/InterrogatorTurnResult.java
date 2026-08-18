@@ -14,9 +14,20 @@ public record InterrogatorTurnResult(
         List<ExtractedFact> extractedFacts,
         List<NewSlot> newSlots,
         List<WaivedSlot> waivedSlots,
+        String intent,
+        String assistantMessage,
+        ReasoningTrace reasoningTrace,
         NextQuestion nextQuestion, // null when readyToConclude is true
         boolean readyToConclude
 ) {
+    public InterrogatorTurnResult(List<ExtractedFact> extractedFacts, List<NewSlot> newSlots,
+                                   List<WaivedSlot> waivedSlots, NextQuestion nextQuestion, boolean readyToConclude) {
+        this(extractedFacts, newSlots, waivedSlots, "ANSWER", null,
+                new ReasoningTrace("Processed the response.", List.of(), List.of()), nextQuestion, readyToConclude);
+    }
+
+    public record ReasoningTrace(String summary, List<String> decisions, List<String> assumptions) {
+    }
     public record ExtractedFact(String slotKey, String value, double confidence) {
     }
 

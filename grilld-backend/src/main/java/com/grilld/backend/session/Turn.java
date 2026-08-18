@@ -52,6 +52,22 @@ public class Turn {
     @Column(name = "input_mode")
     private String inputMode; // voice_primary | chips | number | text
 
+    private String intent;
+
+    @Column(name = "assistant_message")
+    private String assistantMessage;
+
+    @Column(name = "reasoning_summary")
+    private String reasoningSummary;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "reasoning_decisions", nullable = false)
+    private String reasoningDecisions = "[]";
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "reasoning_assumptions", nullable = false)
+    private String reasoningAssumptions = "[]";
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "facts_extracted", nullable = false)
     private String factsExtracted = "[]"; // raw JSON array, shape owned by the Python Interrogator contract
@@ -97,6 +113,15 @@ public class Turn {
         this.tokensOut = tokensOut;
     }
 
+    public void applyReasoning(String intent, String assistantMessage, String summary,
+                               String decisionsJson, String assumptionsJson) {
+        this.intent = intent;
+        this.assistantMessage = assistantMessage;
+        this.reasoningSummary = summary;
+        this.reasoningDecisions = decisionsJson;
+        this.reasoningAssumptions = assumptionsJson;
+    }
+
     public UUID getId() {
         return id;
     }
@@ -136,6 +161,12 @@ public class Turn {
     public Instant getCreatedAt() {
         return createdAt;
     }
+
+    public String getIntent() { return intent; }
+    public String getAssistantMessage() { return assistantMessage; }
+    public String getReasoningSummary() { return reasoningSummary; }
+    public String getReasoningDecisions() { return reasoningDecisions; }
+    public String getReasoningAssumptions() { return reasoningAssumptions; }
 
     /** Mirrors interrogation-engine.md §4's technique table. */
     public enum Technique {
