@@ -19,7 +19,7 @@ import java.util.UUID;
 @Service
 public class RunReportService {
 
-    private static final List<String> AGENT_ROSTER = List.of(
+    static final List<String> AGENT_ROSTER = List.of(
             "market_analyst", "competition_analyst", "strategy_agent", "tech_architect",
             "infra_agent", "diagram_agent", "roadmap_agent", "skills_curator",
             "agent_file_writer", "consistency_auditor");

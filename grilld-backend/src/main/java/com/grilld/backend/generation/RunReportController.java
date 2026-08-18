@@ -27,19 +27,25 @@ public class RunReportController {
     private final GenerationRunRepository generationRunRepository;
     private final RunReportBroadcaster broadcaster;
     private final GenerationService generationService;
+    private final AgentExecutionRepository agentExecutionRepository;
 
     public RunReportController(GenerationRunRepository generationRunRepository, RunReportBroadcaster broadcaster,
-                                GenerationService generationService) {
+                                GenerationService generationService, AgentExecutionRepository agentExecutionRepository) {
         this.generationRunRepository = generationRunRepository;
         this.broadcaster = broadcaster;
         this.generationService = generationService;
+        this.agentExecutionRepository = agentExecutionRepository;
     }
 
     @GetMapping("/report")
     public RunReportUpdate report(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID runId) {
         verifyOwnership(runId, jwt);
         GenerationRun run = findRun(runId);
-        return new RunReportUpdate(run.getStatus().name(), run.getRunReportMd(), run.getFailureReason());
+        long completed = agentExecutionRepository.findByRunIdOrderByStartedAtAsc(runId).stream()
+                .filter(execution -> execution.getStatus() == AgentExecution.Status.COMPLETED)
+                .count();
+        return new RunReportUpdate(run.getStatus().name(), run.getRunReportMd(), run.getFailureReason(),
+                completed, RunReportService.AGENT_ROSTER.size());
     }
 
     @GetMapping(path = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

@@ -23,6 +23,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class RunReportBroadcaster {
 
     private final Map<UUID, List<SseEmitter>> emittersByRun = new ConcurrentHashMap<>();
+    private final AgentExecutionRepository agentExecutionRepository;
+
+    public RunReportBroadcaster(AgentExecutionRepository agentExecutionRepository) {
+        this.agentExecutionRepository = agentExecutionRepository;
+    }
 
     public SseEmitter subscribe(UUID runId) {
         SseEmitter emitter = new SseEmitter(0L);
@@ -51,8 +56,12 @@ public class RunReportBroadcaster {
 
     private void send(SseEmitter emitter, GenerationRun run) {
         try {
+            long completed = agentExecutionRepository.findByRunIdOrderByStartedAtAsc(run.getId()).stream()
+                    .filter(execution -> execution.getStatus() == AgentExecution.Status.COMPLETED)
+                    .count();
             emitter.send(SseEmitter.event().name("report")
-                    .data(new RunReportUpdate(run.getStatus().name(), run.getRunReportMd(), run.getFailureReason())));
+                    .data(new RunReportUpdate(run.getStatus().name(), run.getRunReportMd(), run.getFailureReason(),
+                            completed, RunReportService.AGENT_ROSTER.size())));
             if (run.getStatus() != GenerationRun.Status.IN_PROGRESS) {
                 emitter.complete();
             }

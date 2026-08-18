@@ -61,6 +61,8 @@ export interface RunReportUpdate {
   status: "IN_PROGRESS" | "COMPLETED" | "FAILED";
   runReportMd: string | null;
   failureReason: string | null;
+  completedAgents: number;
+  totalAgents: number;
 }
 
 export interface PackageStatusResponse {

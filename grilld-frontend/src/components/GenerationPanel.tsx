@@ -56,17 +56,37 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     if (!run) return;
 
+    let stopped = false;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const applyUpdate = (update: RunReportUpdate) => {
+      if (stopped) return;
+      setReport(update);
+      if (update.status === "COMPLETED") pollPackage(run.runId);
+    };
+
+    const poll = async () => {
+      const update = await apiClient<RunReportUpdate>(`/sessions/${sessionId}/runs/${run.runId}/report`).catch(() => null);
+      if (update) applyUpdate(update);
+      if (!stopped && update?.status === "IN_PROGRESS") pollTimer = setTimeout(poll, 1500);
+    };
+    void poll();
+
     const source = new EventSource(runReportEventsUrl(sessionId, run.runId));
     source.addEventListener("report", (event) => {
       const update = JSON.parse((event as MessageEvent).data) as RunReportUpdate;
-      setReport(update);
-      if (update.status === "COMPLETED") {
-        pollPackage(run.runId);
-      }
+      applyUpdate(update);
     });
-    source.onerror = () => source.close();
+    source.onerror = () => {
+      source.close();
+      if (!pollTimer) pollTimer = setTimeout(poll, 500);
+    };
 
-    return () => source.close();
+    return () => {
+      stopped = true;
+      source.close();
+      if (pollTimer) clearTimeout(pollTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run]);
 
@@ -160,7 +180,10 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
                 {report.status}
               </Badge>
             </div>
-            {report.status === "IN_PROGRESS" && <Progress value={undefined} className="h-1.5" />}
+            <div className="flex items-center gap-3">
+              <Progress value={(report.completedAgents / Math.max(report.totalAgents, 1)) * 100} className="h-1.5 flex-1" />
+              <span className="font-mono text-xs text-ink-soft">{report.completedAgents}/{report.totalAgents}</span>
+            </div>
             {report.runReportMd ? (
               <Markdown className="prose prose-sm max-h-64 max-w-none overflow-y-auto text-ink prose-headings:text-ink prose-strong:text-ink">
                 {report.runReportMd}
