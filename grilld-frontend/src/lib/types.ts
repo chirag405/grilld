@@ -8,6 +8,7 @@ export interface SessionStartResult {
   question: string;
   inputMode: InputMode;
   whyAsking: string;
+  chipOptions: string[];
 }
 
 export interface TurnAnswerResult {
@@ -15,6 +16,7 @@ export interface TurnAnswerResult {
   concluded: boolean;
   inputMode: InputMode | null;
   whyAsking: string | null;
+  chipOptions: string[];
 }
 
 export interface SlotView {

@@ -14,8 +14,11 @@ import {
   ChatContainerRoot,
 } from "@/components/ui/chat-container";
 import { Message, MessageContent } from "@/components/ui/message";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { PromptInput, PromptInputActions, PromptInputTextarea } from "@/components/ui/prompt-input";
 import { Loader } from "@/components/ui/loader";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { ApiError, type InputMode, type SessionDetail } from "@/lib/types";
 
 interface StartResponse {
@@ -23,6 +26,7 @@ interface StartResponse {
   question: string;
   inputMode: InputMode;
   whyAsking: string;
+  chipOptions: string[];
 }
 
 interface AnswerResponse {
@@ -30,6 +34,7 @@ interface AnswerResponse {
   concluded: boolean;
   inputMode: InputMode | null;
   whyAsking: string | null;
+  chipOptions: string[];
 }
 
 interface Turn {
@@ -46,7 +51,9 @@ export default function InterviewPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [inputMode, setInputMode] = useState<InputMode>("text");
+  const [chipOptions, setChipOptions] = useState<string[]>([]);
   const [concluded, setConcluded] = useState(false);
+  const [confirmedToGenerate, setConfirmedToGenerate] = useState(false);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [answering, setAnswering] = useState(false);
 
@@ -70,8 +77,12 @@ export default function InterviewPage() {
         body: JSON.stringify({ rawIdea: idea }),
       });
       setSessionId(result.sessionId);
-      setTurns([{ role: "assistant", content: result.question, whyAsking: result.whyAsking }]);
+      setTurns([
+        { role: "user", content: idea },
+        { role: "assistant", content: result.question, whyAsking: result.whyAsking },
+      ]);
       setInputMode(result.inputMode);
+      setChipOptions(result.chipOptions);
       await refreshDetail(result.sessionId);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't start the interview. Try again.");
@@ -95,6 +106,7 @@ export default function InterviewPage() {
       } else if (result.question) {
         setTurns((t) => [...t, { role: "assistant", content: result.question!, whyAsking: result.whyAsking }]);
         setInputMode(result.inputMode ?? "text");
+        setChipOptions(result.chipOptions);
       }
       await refreshDetail(sessionId);
     } catch (e) {
@@ -143,18 +155,16 @@ export default function InterviewPage() {
   const currentInputMode = concluded ? null : inputMode;
 
   return (
-    <main className="grid min-h-dvh grid-cols-1 bg-paper lg:grid-cols-[1fr_360px]">
-      <section className="flex min-h-dvh flex-col">
+    <main className="grid h-dvh grid-cols-1 overflow-hidden bg-paper lg:grid-cols-[1fr_360px]">
+      <section className="flex h-full min-h-0 flex-col overflow-hidden">
         <TopNav />
-        <ChatContainerRoot className="flex-1 px-6 py-10 sm:px-12">
+        <ChatContainerRoot className="min-h-0 flex-1 px-6 py-10 sm:px-12">
           <ChatContainerContent className="mx-auto flex w-full max-w-2xl flex-col gap-6">
             {turns.map((turn, i) => (
               <Message key={i} className={turn.role === "user" ? "justify-end" : "justify-start"}>
                 <div className="flex max-w-[85%] flex-col gap-1">
-                  {turn.role === "assistant" && turn.whyAsking && (
-                    <p className="px-1 text-xs italic text-ink-soft">{turn.whyAsking}</p>
-                  )}
                   <MessageContent
+                    markdown={turn.role === "assistant"}
                     className={
                       turn.role === "user"
                         ? "bg-ink text-paper"
@@ -163,6 +173,14 @@ export default function InterviewPage() {
                   >
                     {turn.content}
                   </MessageContent>
+                  {turn.role === "assistant" && turn.whyAsking && (
+                    <Tooltip>
+                      <TooltipTrigger className="self-start px-1 text-xs text-ink-soft/70 underline decoration-dotted underline-offset-2 hover:text-ink-soft">
+                        why is Grilld asking this?
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">{turn.whyAsking}</TooltipContent>
+                    </Tooltip>
+                  )}
                 </div>
               </Message>
             ))}
@@ -175,7 +193,11 @@ export default function InterviewPage() {
               </Message>
             )}
 
-            {concluded && (
+            {concluded && !confirmedToGenerate && detail && (
+              <BriefReview detail={detail} onConfirm={() => setConfirmedToGenerate(true)} />
+            )}
+
+            {concluded && confirmedToGenerate && (
               <div className="pt-2">
                 <p className="mb-4 text-xl font-semibold text-ink">That&rsquo;s enough to work with.</p>
                 <GenerationPanel sessionId={sessionId} />
@@ -185,18 +207,23 @@ export default function InterviewPage() {
         </ChatContainerRoot>
 
         {currentInputMode && (
-          <div className="mx-auto w-full max-w-2xl px-6 pb-8 sm:px-12">
+          <div className="mx-auto w-full shrink-0 max-w-2xl px-6 pb-8 sm:px-12">
             {error && (
               <Alert variant="destructive" className="mb-3">
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            <AnswerForm inputMode={currentInputMode} onSubmit={submitAnswer} submitting={answering} />
+            <AnswerForm
+              inputMode={currentInputMode}
+              chipOptions={chipOptions}
+              onSubmit={submitAnswer}
+              submitting={answering}
+            />
           </div>
         )}
       </section>
 
-      <div className="border-t border-line lg:border-l lg:border-t-0">
+      <div className="h-full min-h-0 overflow-hidden border-t border-line lg:border-l lg:border-t-0">
         {detail && (
           <TitleBlockPanel
             project={detail.rawIdea}
@@ -208,6 +235,48 @@ export default function InterviewPage() {
         )}
       </div>
     </main>
+  );
+}
+
+/**
+ * Between "the interview concluded" and actually spending credits, a plain
+ * summary of what Grilld learned - the user confirms it's right (or notices
+ * something's off) before generation starts, rather than finding out only
+ * after the run.
+ */
+function BriefReview({ detail, onConfirm }: { detail: SessionDetail; onConfirm: () => void }) {
+  const filled = detail.slots.filter((s) => s.status === "FILLED" || s.status === "ASSUMED");
+
+  return (
+    <Card className="max-w-2xl gap-4">
+      <CardHeader className="px-5">
+        <CardTitle>Here&rsquo;s what Grilld has so far</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 px-5">
+        <div>
+          <p className="font-mono text-[11px] uppercase tracking-widest text-ink-soft">idea</p>
+          <p className="mt-1 text-sm text-ink">{detail.rawIdea}</p>
+        </div>
+        <ul className="flex flex-col gap-3">
+          {filled.map((slot) => (
+            <li key={slot.slotKey} className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-ink">{slot.description}</span>
+                {slot.status === "ASSUMED" && (
+                  <Badge variant="outline" className="border-accent/20 bg-accent-soft text-accent-ink">
+                    assumed
+                  </Badge>
+                )}
+              </div>
+              {slot.value && <p className="font-mono text-xs text-ink-soft">{slot.value}</p>}
+            </li>
+          ))}
+        </ul>
+        <Button onClick={onConfirm} className="self-start">
+          Looks right — generate my blueprint
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
