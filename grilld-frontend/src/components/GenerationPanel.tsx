@@ -24,10 +24,13 @@ import {
   ApiError,
   FULL_BLUEPRINT_CREDITS,
   type BillingBalance,
+  type DocumentContent,
   type GenerationRunResult,
+  type GenerationRunSummary,
   type PackageStatusResponse,
   type RunReportUpdate,
   type ScaleCalibrationResult,
+  type SessionDetail,
 } from "@/lib/types";
 
 /**
@@ -48,10 +51,41 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [needsCredits, setNeedsCredits] = useState(false);
+  const [preview, setPreview] = useState<DocumentContent | null>(null);
+  const [previewLoading, setPreviewLoading] = useState<string | null>(null);
 
   useEffect(() => {
     apiClient<BillingBalance>("/billing/balance").then(setBalance).catch(() => {});
   }, []);
+
+  // Reopening a session from history (TopNav's "conversations" list) mounts this
+  // same panel fresh - without this, a session whose blueprint already generated
+  // showed an empty panel with no way to see or re-download it. Restoring the
+  // most recent run here (rather than threading it down from the parent) keeps
+  // the panel self-sufficient regardless of how sessionId got here.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      apiClient<SessionDetail>(`/sessions/${sessionId}`).catch(() => null),
+      apiClient<GenerationRunSummary[]>(`/sessions/${sessionId}/runs`).catch(() => []),
+    ]).then(([detail, runs]) => {
+      if (cancelled) return;
+      if (detail?.scaleTier) {
+        setTier({
+          tier: detail.scaleTier as ScaleCalibrationResult["tier"],
+          reasoning: detail.scaleTierReasoning ?? "",
+          signals: [],
+        });
+      }
+      const latest = runs[0];
+      if (latest) {
+        setRun({ runId: latest.runId, status: latest.status, files: {} });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   async function pollPackage(runId: string) {
     const status = await apiClient<PackageStatusResponse>(`/sessions/${sessionId}/runs/${runId}/package`).catch(
@@ -127,6 +161,8 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
       const result = await apiClient<GenerationRunResult>(`/sessions/${sessionId}/generate`, {
         method: "POST",
       });
+      setReport(null);
+      setPkg(null);
       setRun(result);
     } catch (e) {
       if (e instanceof ApiError && e.status === 402) {
@@ -136,6 +172,21 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
       }
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function openDocument(path: string) {
+    if (!run || previewLoading) return;
+    setPreviewLoading(path);
+    try {
+      const doc = await apiClient<DocumentContent>(
+        `/sessions/${sessionId}/runs/${run.runId}/documents?path=${encodeURIComponent(path)}`,
+      );
+      setPreview(doc);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : `Couldn't open ${path}.`);
+    } finally {
+      setPreviewLoading(null);
     }
   }
 
@@ -162,9 +213,13 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
           </div>
         )}
 
-        {tier && !run && (
+        {tier && (!run || report?.status === "FAILED") && (
           <Button onClick={generate} disabled={busy} className="self-start">
-            {busy ? "Starting…" : `Generate blueprint (${FULL_BLUEPRINT_CREDITS} credits)`}
+            {busy
+              ? "Starting…"
+              : run
+                ? `Try again (${FULL_BLUEPRINT_CREDITS} credits)`
+                : `Generate blueprint (${FULL_BLUEPRINT_CREDITS} credits)`}
           </Button>
         )}
 
@@ -199,7 +254,21 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
                         <span className="font-mono text-[10px] text-ink-soft">{step.status.toLowerCase()}</span>
                       </div>
                       {step.narration && <p className="text-ink-soft">{step.narration}</p>}
-                      {step.documents.length > 0 && <p className="font-mono text-[10px] text-accent-ink">{step.documents.join(", ")}</p>}
+                      {step.documents.length > 0 && (
+                        <p className="flex flex-wrap gap-x-2 font-mono text-[10px]">
+                          {step.documents.map((path) => (
+                            <button
+                              key={path}
+                              type="button"
+                              onClick={() => openDocument(path)}
+                              disabled={previewLoading === path}
+                              className="text-accent-ink underline decoration-dotted underline-offset-2 hover:text-accent disabled:opacity-50"
+                            >
+                              {previewLoading === path ? `${path} (opening…)` : path}
+                            </button>
+                          ))}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -248,6 +317,19 @@ export function GenerationPanel({ sessionId }: { sessionId: string }) {
               <Link href="/billing">Go to billing</Link>
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={preview !== null} onOpenChange={(open) => !open && setPreview(null)}>
+        <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-mono text-sm">{preview?.path}</DialogTitle>
+          </DialogHeader>
+          {preview && (
+            <Markdown className="prose prose-sm max-w-none text-ink prose-headings:text-ink prose-strong:text-ink">
+              {preview.content}
+            </Markdown>
+          )}
         </DialogContent>
       </Dialog>
     </Card>

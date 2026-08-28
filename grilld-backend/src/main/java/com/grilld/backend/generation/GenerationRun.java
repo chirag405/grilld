@@ -116,6 +116,14 @@ public class GenerationRun {
         return failureReason;
     }
 
+    public Instant getStartedAt() {
+        return startedAt;
+    }
+
+    public Instant getCompletedAt() {
+        return completedAt;
+    }
+
     public Instant getUpdatedAt() {
         return updatedAt;
     }

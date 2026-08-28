@@ -339,4 +339,35 @@ class GenerationServiceTest {
                         briefRepository.findBySessionId(calibrated.sessionId()).orElseThrow().getId())
                 .size(), "a blocked request must not leave a dangling run row");
     }
+
+    @Test
+    void listRunsReturnsTheOwningUsersRunMostRecentFirst() {
+        // Phase 12: reopening a session from history needs to find out whether it
+        // already has a blueprint - this is the read-side of generate() itself,
+        // so it gets the same fixture shape as successfulRunPersists... above.
+        var calibrated = startCalibratedSession("gen-listruns-google-id", "gen-listruns@example.com");
+        stubStreamedRun(List.<Object[]>of(new Object[]{"market_analyst", "/docs/MARKET_ANALYSIS.md", "Done."}),
+                Map.of("/docs/MARKET_ANALYSIS.md", "content"));
+
+        GenerationService.GenerationRunResult firstRun = generationService.generate(calibrated.sessionId(), calibrated.userId());
+
+        List<GenerationService.GenerationRunSummary> runs =
+                generationService.listRuns(calibrated.sessionId(), calibrated.userId());
+
+        assertEquals(1, runs.size());
+        GenerationService.GenerationRunSummary summary = runs.get(0);
+        assertEquals(firstRun.runId(), summary.runId());
+        assertEquals("COMPLETED", summary.status());
+        assertEquals(GenerationService.FULL_BLUEPRINT_CREDITS, summary.creditsCharged());
+    }
+
+    @Test
+    void listRunsRejectsAnotherUsersSession() {
+        var calibrated = startCalibratedSession("gen-listruns-owner-google-id", "gen-listruns-owner@example.com");
+        User otherUser = userService.findOrCreateFromGoogle(
+                "gen-listruns-intruder-google-id", "gen-listruns-intruder@example.com", null, null);
+
+        assertThrows(AccessDeniedException.class,
+                () -> generationService.listRuns(calibrated.sessionId(), otherUser.getId()));
+    }
 }

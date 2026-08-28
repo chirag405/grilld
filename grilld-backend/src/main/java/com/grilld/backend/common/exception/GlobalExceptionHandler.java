@@ -50,6 +50,12 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(TranscriptionUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleTranscriptionUnavailable(TranscriptionUnavailableException ex, HttpServletRequest request) {
+        log.warn("Voice transcription failed on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage(), ex.getCause());
+        return respond(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(InsufficientCreditsException.class)
     public ResponseEntity<ErrorResponse> handleInsufficientCredits(InsufficientCreditsException ex, HttpServletRequest request) {
         return respond(HttpStatus.PAYMENT_REQUIRED, ex.getMessage(), request);

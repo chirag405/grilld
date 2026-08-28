@@ -109,6 +109,23 @@ export interface GenerationStep {
   documents: string[];
 }
 
+export interface GenerationRunSummary {
+  runId: string;
+  status: "IN_PROGRESS" | "COMPLETED" | "FAILED";
+  creditsCharged: number;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export interface TranscriptionResult {
+  text: string;
+}
+
+export interface DocumentContent {
+  path: string;
+  content: string;
+}
+
 export interface PackageStatusResponse {
   packageId: string;
   status: "PENDING" | "READY" | "FAILED";

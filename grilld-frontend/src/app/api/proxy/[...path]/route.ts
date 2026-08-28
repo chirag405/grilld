@@ -32,7 +32,10 @@ async function proxy(request: NextRequest, ctx: RouteContext<"/api/proxy/[...pat
         ? { "Content-Type": request.headers.get("content-type")! }
         : {}),
     },
-    body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.text(),
+    // arrayBuffer(), not text() - a JSON body round-trips through either just
+    // fine, but a multipart upload (voice recordings) carries raw binary bytes
+    // that text()'s UTF-8 decode would corrupt.
+    body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer(),
     // The Run Report's SSE stream is a long-lived connection - undici (fetch's
     // implementation here) needs this to hand back a readable body instead of
     // buffering the whole response before resolving.

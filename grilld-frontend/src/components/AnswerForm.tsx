@@ -9,6 +9,7 @@ import {
   PromptInputActions,
   PromptInputTextarea,
 } from "@/components/ui/prompt-input";
+import { VoiceRecorder } from "@/components/VoiceRecorder";
 import type { InputMode } from "@/lib/types";
 
 const SKIP_PHRASE = "I'd like to skip this question for now.";
@@ -23,10 +24,14 @@ const SKIP_PHRASE = "I'd like to skip this question for now.";
  * inputMode="chips" with an empty chipOptions list (the Interrogator
  * couldn't write real options for this question) falls back to plain text -
  * inventing generic placeholder labels would misrepresent what the AI
- * actually asked for. voice_primary falls back to text too: no
- * speech-to-text is wired up anywhere in this stack yet (see LEARNING.md's
- * Phase 9 note) - a mic button with nothing behind it would be a fake
- * affordance. Both are named, honest gaps, not silently faked here.
+ * actually asked for. That's a named, honest gap, not silently faked here.
+ *
+ * voice_primary adds a mic button (VoiceRecorder) next to the textarea -
+ * transcribed text lands in the textarea for the user to review/edit, never
+ * auto-submitted. No speech-to-text provider is configured on the backend
+ * yet (see docs/phases/phase-12/SETUP.md), so recording today surfaces an
+ * honest "not turned on" message rather than a fake result; the UI doesn't
+ * need to change once a provider is chosen.
  *
  * "Skip" is real, not a fake affordance: the Interrogator already has a
  * first-class waived_slots concept it applies with its own judgment (not
@@ -147,13 +152,25 @@ export function AnswerForm({
         autoFocus
         placeholder={inputMode === "voice_primary" ? "Speak, or type your answer" : "Your answer"}
       />
-      <PromptInputActions className="justify-end gap-2 pt-2">
-        <Button variant="ghost" size="sm" onClick={skip} disabled={submitting}>
-          Skip
-        </Button>
-        <Button size="sm" onClick={submit} disabled={submitting || !value.trim()}>
-          {submitting ? "Answer sent" : "Answer"}
-        </Button>
+      <PromptInputActions className="justify-between gap-2 pt-2">
+        <div>
+          {inputMode === "voice_primary" && (
+            <VoiceRecorder
+              disabled={submitting}
+              onTranscript={(text) =>
+                setValue((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))
+              }
+            />
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={skip} disabled={submitting}>
+            Skip
+          </Button>
+          <Button size="sm" onClick={submit} disabled={submitting || !value.trim()}>
+            {submitting ? "Answer sent" : "Answer"}
+          </Button>
+        </div>
       </PromptInputActions>
     </PromptInput>
   );

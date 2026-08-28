@@ -62,7 +62,9 @@ public class RateLimitConfig implements WebMvcConfigurer {
                         "/api/v1/sessions",
                         "/api/v1/sessions/*/answer",
                         "/api/v1/sessions/*/scale-tier",
-                        "/api/v1/sessions/*/force-conclude");
+                        "/api/v1/sessions/*/force-conclude",
+                        // Same per-turn cost profile as answering a question - see TranscriptionController.
+                        "/api/v1/voice/transcribe");
 
         registry.addInterceptor(new RateLimitInterceptor(
                         "generation", generationCapacity, Duration.ofSeconds(generationWindowSeconds), objectMapper))

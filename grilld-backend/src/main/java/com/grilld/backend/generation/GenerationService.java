@@ -17,6 +17,7 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -145,6 +146,28 @@ public class GenerationService {
      * see SessionService.verifyOwnership's Javadoc for the matching gap on
      * the session side).
      */
+    /**
+     * Every past attempt at this session's blueprint, most recent first - what
+     * lets reopening a session from history (SessionController's session list)
+     * show a finished run's Run Report and download link again instead of a
+     * blank generation panel, without the caller re-charging credits by
+     * calling {@link #generate}. Same ownership check as generate() itself,
+     * since this is the read-side of the same "requesting user must own the
+     * session" rule.
+     */
+    public List<GenerationRunSummary> listRuns(UUID sessionId, UUID requestingUserId) {
+        DiscoverySession session = discoverySessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("No session " + sessionId));
+        if (!session.getUserId().equals(requestingUserId)) {
+            throw new AccessDeniedException("Session " + sessionId + " does not belong to the requesting user");
+        }
+        return briefRepository.findBySessionId(sessionId)
+                .map(brief -> generationRunRepository.findByBriefIdOrderByStartedAtDesc(brief.getId()).stream()
+                        .map(GenerationRunSummary::from)
+                        .toList())
+                .orElseGet(List::of);
+    }
+
     public UUID resolveOwningUserId(UUID runId) {
         GenerationRun run = generationRunRepository.findById(runId)
                 .orElseThrow(() -> new ResourceNotFoundException("No generation run " + runId));
@@ -243,6 +266,14 @@ public class GenerationService {
     public record GenerationRunResult(UUID runId, String status, Map<String, String> files) {
         public GenerationRunResult {
             files = new LinkedHashMap<>(files);
+        }
+    }
+
+    public record GenerationRunSummary(UUID runId, String status, int creditsCharged, Instant startedAt,
+                                        Instant completedAt) {
+        static GenerationRunSummary from(GenerationRun run) {
+            return new GenerationRunSummary(run.getId(), run.getStatus().name(), run.getCreditsCharged(),
+                    run.getStartedAt(), run.getCompletedAt());
         }
     }
 }
