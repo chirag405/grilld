@@ -2,17 +2,21 @@
 
 No new required credentials. Follow the repository-root `SETUP.md` to run PostgreSQL, the AI service, Spring backend, and Next.js frontend as usual.
 
-## Voice transcription provider (optional, not yet chosen)
+## Voice transcription provider: Fish Audio
 
-`grilld.voice.provider` defaults to `none` - `UnconfiguredTranscriptionService` answers every `POST /api/v1/voice/transcribe` call with a clear 503 rather than pretending to transcribe anything. Recording, upload, and error handling on the frontend all work today; only the actual speech-to-text call is missing.
+`grilld.voice.provider` defaults to `none` (`UnconfiguredTranscriptionService`, an honest 503) unless set to `fishaudio`, which activates `FishAudioTranscriptionService` - calls Fish Audio's hosted ASR (`POST https://api.fish.audio/v1/asr`, per its live-fetched OpenAPI reference at `docs.fish.audio/api-reference/endpoint/openapi-v1/speech-to-text`).
 
-To wire a real provider once one is chosen:
+**To turn it on:**
 
-1. Implement `com.grilld.backend.voice.TranscriptionService` against the provider's API (e.g. `ElevenLabsTranscriptionService`), annotated `@Component` + `@ConditionalOnProperty(prefix = "grilld.voice", name = "provider", havingValue = "<provider-name>")` - same pattern as `UnconfiguredTranscriptionService`.
-2. Add whatever API key(s) the provider needs as new `@Value`-injected properties in `application.properties`, following the existing `${ENV_VAR:}` convention (see the Lemon Squeezy or AWS blocks for the pattern).
-3. Set `VOICE_TRANSCRIPTION_PROVIDER` (backend env var) to the new provider name.
+1. Create a Fish Audio account and generate an API key at **https://fish.audio/app/api-keys/**.
+2. Set two backend env vars:
+   - `VOICE_TRANSCRIPTION_PROVIDER=fishaudio`
+   - `FISHAUDIO_API_KEY=<the key from step 1>`
+3. Nothing else changes - restart the backend and `POST /api/v1/voice/transcribe` starts returning real transcripts. Nothing on the frontend (`VoiceRecorder.tsx`) needs to change either; it already handles both the success and honest-failure responses.
 
-Nothing on the frontend (`VoiceRecorder.tsx`) needs to change - it already handles both the success and honest-failure responses.
+Pricing at the time this was wired: pay-as-you-go, ~$0.36/audio-hour (check Fish Audio's own pricing page for current rates - this is exactly the kind of number that goes stale). A blank `FISHAUDIO_API_KEY` with `grilld.voice.provider=fishaudio` still fails honestly (a clear "misconfigured" 503) rather than crashing the app at boot.
+
+**To switch to a different provider later:** implement `com.grilld.backend.voice.TranscriptionService` against the new provider's API, `@Component` + `@ConditionalOnProperty(prefix = "grilld.voice", name = "provider", havingValue = "<provider-name>")` - same pattern `FishAudioTranscriptionService`/`UnconfiguredTranscriptionService` both already follow - then flip `VOICE_TRANSCRIPTION_PROVIDER`.
 
 ## Multipart upload limit
 

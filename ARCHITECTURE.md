@@ -138,7 +138,7 @@ Every HTTP request to `grilld-backend` passes through a chain of filters before 
 | `aiservice` | `AiServiceClient` (interface) / `HttpAiServiceClient` (real implementation) - the one place that calls `grilld-ai-service` over HTTP |
 | `generation` | Triggering a full blueprint run (`GenerationService`), tracking its live progress (`RunReportService`, `RunReportController`'s SSE stream), the cost circuit breaker, packaging the result into a downloadable zip (`PackagerService`, `PackageController`), previewing one generated document (`GeneratedDocumentController`) |
 | `billing` | `CreditService` (the *only* code allowed to change a user's credit balance), Lemon Squeezy checkout URL + webhook handling |
-| `voice` | Speech-to-text seam - see §7 |
+| `voice` | Speech-to-text: `TranscriptionService` seam, `FishAudioTranscriptionService` (real), `UnconfiguredTranscriptionService` (honest fallback) - see §7 |
 | `common` | `GlobalExceptionHandler`, the rate limiter |
 
 ### Every API endpoint, at a glance
@@ -237,7 +237,7 @@ Next.js's **App Router**: a folder under `src/app/` becomes a URL. `src/app/inte
 
 Three things landed together, all documented in full in `docs/phases/phase-12/README.md`:
 
-1. **Voice input plumbing** - `voice/TranscriptionService` is an interface with one real implementation today, `UnconfiguredTranscriptionService`, which honestly fails every request until a real speech-to-text provider is chosen and wired in (same "interface + swappable implementation" pattern as `AiServiceClient` and `PackageStorage`). The frontend's `VoiceRecorder.tsx` records real audio and uploads it already - only the actual transcription call is stubbed.
+1. **Voice input, backed by Fish Audio** - `voice/TranscriptionService` is an interface (same "interface + swappable implementation" pattern as `AiServiceClient` and `PackageStorage`) with two implementations: `FishAudioTranscriptionService` (calls Fish Audio's hosted ASR - real, live-fetched-from-their-docs contract, active once `FISHAUDIO_API_KEY` is set) and `UnconfiguredTranscriptionService` (an honest 503, the default for any deployment without a key configured). The frontend's `VoiceRecorder.tsx` records real audio and uploads it; the transcript lands in the textarea for the user to edit, never auto-submitted.
 2. **Rendered Mermaid diagrams** - `components/ui/mermaid-diagram.tsx` turns fenced ` ```mermaid ` blocks into real rendered diagrams anywhere markdown is shown in the app (chat, Run Report, the new document preview).
 3. **Run history actually restores a finished blueprint** - a new `GET /api/v1/sessions/{id}/runs` endpoint plus a `GenerationPanel` that checks for a session's past runs on mount, so reopening an old, already-generated session shows its Run Report and download link again instead of an empty panel.
 

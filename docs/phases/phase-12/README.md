@@ -2,14 +2,15 @@
 
 Three independent gaps identified by a full-project audit, built together as one feature branch (`feature/voice-diagrams-run-history`): a voice-input mode that was a label with nothing behind it, Mermaid diagrams that only ever existed as raw text, and a session-history feature (Phase 11) that couldn't show a session's finished blueprint once you reopened it.
 
-## 1. Voice input plumbing
+## 1. Voice input - live, via Fish Audio
 
-Recording, upload, and the backend seam are fully built; no speech-to-text provider is chosen yet (the user will pick one - ElevenLabs Scribe, Fish Speech, or similar - later).
+Recording, upload, and the backend seam were built first; Fish Audio was then wired in as the real transcription provider once chosen (`grilld.voice.provider=fishaudio` - not the default, since it needs a real API key; `none` stays the safe default for any deployment that hasn't configured one).
 
-- `AnswerForm`'s `voice_primary` mode now renders a mic button (`VoiceRecorder.tsx`) next to the textarea. It records with `MediaRecorder`, uploads the clip to the backend, and drops the transcribed text into the textarea for the user to review/edit - it never auto-submits.
+- `AnswerForm`'s `voice_primary` mode renders a mic button (`VoiceRecorder.tsx`) next to the textarea. It records with `MediaRecorder`, uploads the clip to the backend, and drops the transcribed text into the textarea for the user to review/edit - it never auto-submits.
 - `POST /api/v1/voice/transcribe` (`TranscriptionController`) accepts the multipart upload and calls `TranscriptionService` - one interface, swappable implementation, the same seam pattern as `AiServiceClient` and `PackageStorage`.
-- `UnconfiguredTranscriptionService` is the only implementation today (active whenever `grilld.voice.provider=none`, the default). It throws `TranscriptionUnavailableException` (503) with an honest message - matches this project's "never fake a result" rule. Wiring a real provider later is: implement `TranscriptionService`, flip `grilld.voice.provider`, done - nothing above this layer changes.
+- `FishAudioTranscriptionService` calls Fish Audio's hosted ASR (`POST https://api.fish.audio/v1/asr`, Bearer-authenticated, multipart `audio` field) - the exact contract was fetched live from Fish Audio's own OpenAPI reference before writing any code (Research-First Rule; this is a BETA endpoint on their side). `UnconfiguredTranscriptionService` remains the fallback (`grilld.voice.provider=none`, the default) - an honest 503 rather than a fake result, for any deployment that hasn't set an API key yet.
 - The upload endpoint sits in the same rate-limit tier as answering a question (`RateLimitConfig`), since it's the same per-turn action.
+- `FishAudioTranscriptionServiceTest` proves the real request/response wiring (Bearer header, multipart Content-Type, the actual URL, error mapping on 401/500) against a `MockRestServiceServer`-bound `RestClient.Builder` - no live network call, but a real assertion on the request actually produced, not just on the class existing.
 
 **A necessary fix along the way:** the frontend's `/api/proxy` route forwarded every request body through `request.text()`, which silently corrupts binary data. A multipart audio upload would have been mangled by the proxy before ever reaching Spring. Switched to `request.arrayBuffer()`, which round-trips both JSON and binary bodies correctly.
 
@@ -31,7 +32,7 @@ Phase 11 added session history/resume, but it only rehydrated the interview tran
 
 ## Key files
 
-- `grilld-backend/.../voice/{TranscriptionService,UnconfiguredTranscriptionService,TranscriptionController}.java`
+- `grilld-backend/.../voice/{TranscriptionService,UnconfiguredTranscriptionService,FishAudioTranscriptionService,TranscriptionController}.java`
 - `grilld-backend/.../common/exception/TranscriptionUnavailableException.java`
 - `grilld-backend/.../generation/{GenerationService,GenerationController}.java` - `listRuns`/`GenerationRunSummary`
 - `grilld-backend/.../generation/GeneratedDocumentController.java`
@@ -42,7 +43,7 @@ Phase 11 added session history/resume, but it only rehydrated the interview tran
 
 ## Deliberate boundaries
 
-- No speech-to-text provider is configured. `grilld.voice.provider` stays `none` until the user picks one; see SETUP.md for what wiring a real provider will need.
+- Fish Audio is wired in but not enabled by default - `grilld.voice.provider` still defaults to `none` (no API key exists in this environment to set); see SETUP.md for the exact env vars a deployment sets to turn it on.
 - Diagram rendering is client-side preview only, per explicit scope decision - no server-side render step, no image files added to the downloaded package.
 - The document-preview dialog is a single-file viewer, not a full doc browser (file tree, multi-pane navigation) - deliberately the smallest thing that makes the new Mermaid renderer actually reachable in the running app, not a scope expansion beyond what was asked.
 - This session's sandbox couldn't run the Testcontainers-backed integration suite (`GenerationServiceTest`, `RunReportControllerTest`, `RateLimitMvcIntegrationTest`) - no Docker daemon was reachable. See TESTING.md for exactly what was and wasn't verified.

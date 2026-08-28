@@ -11,11 +11,12 @@ import type { ApiErrorBody, TranscriptionResult } from "@/lib/types";
  * back to the caller to drop into the textarea for the user to review/edit
  * before submitting - it never auto-submits an answer it didn't type itself.
  *
- * No speech-to-text provider is wired up on the backend yet (grilld.voice.provider
- * defaults to "none" - see UnconfiguredTranscriptionService), so today this
- * mostly demonstrates the honest-failure path: record, upload, get a clear
- * "voice input isn't turned on yet" message back, fall back to typing. The
- * recording UI itself doesn't change once a real provider is configured.
+ * Transcribed by Fish Audio's hosted ASR on the backend (FishAudioTranscriptionService,
+ * active when grilld.voice.provider=fishaudio and FISHAUDIO_API_KEY is set -
+ * see docs/phases/phase-12/SETUP.md). A deployment without that configured
+ * falls back to UnconfiguredTranscriptionService's honest "voice input isn't
+ * turned on yet" message instead of a fake result - this component's code
+ * doesn't need to know or care which of the two is behind the endpoint.
  *
  * Deliberately not routed through apiClient() - that helper always sets
  * Content-Type: application/json when a body is present, which would strip

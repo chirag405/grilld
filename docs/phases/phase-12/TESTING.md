@@ -2,7 +2,7 @@
 
 ## Automated checks
 
-- [x] Full backend suite: `cd grilld-backend && mvn test` (73 passed - 68 pre-existing + 5 new: `GenerationServiceTest`'s two `listRuns` tests, `GeneratedDocumentControllerTest`, `TranscriptionControllerTest`'s two tests). Requires a running Docker daemon (Testcontainers boots real Postgres per test class) - this session's sandbox had Docker Desktop's daemon stopped at first; started it mid-session and re-ran the full suite clean.
+- [x] Full backend suite: `cd grilld-backend && mvn test` (77 passed - 68 pre-existing + 9 new: `GenerationServiceTest`'s two `listRuns` tests, `GeneratedDocumentControllerTest`, `TranscriptionControllerTest`'s two tests, `FishAudioTranscriptionServiceTest`'s four tests - real request/response wiring against a `MockRestServiceServer`, Bearer header + multipart Content-Type + error mapping, no live network call). Requires a running Docker daemon (Testcontainers boots real Postgres per test class) - this session's sandbox had Docker Desktop's daemon stopped at first; started it mid-session and re-ran the full suite clean.
 - [x] Backend compiles clean (`mvn compile`) and `mvn test-compile` catches nothing.
 - [x] Changed frontend files pass ESLint individually (`VoiceRecorder.tsx`, `AnswerForm.tsx`, `GenerationPanel.tsx`, `mermaid-diagram.tsx`, `markdown.tsx`, the proxy route, `types.ts`).
 - [x] Frontend TypeScript: `npx tsc --noEmit` clean.
@@ -11,7 +11,8 @@
 
 ## Manual end-to-end checklist
 
-- [ ] On a question with `inputMode: "voice_primary"`, click the mic button, allow microphone access, speak, click stop - confirm it uploads and shows the honest "voice input isn't turned on yet" message (expected until a provider is configured), and that typing still works normally.
+- [ ] Without `FISHAUDIO_API_KEY` set: click the mic button, allow microphone access, speak, click stop - confirm it uploads and shows the honest "voice input isn't turned on yet" message, and that typing still works normally.
+- [ ] With `VOICE_TRANSCRIPTION_PROVIDER=fishaudio` and a real `FISHAUDIO_API_KEY` set: record a real answer and confirm the actual spoken words come back as text in the textarea, editable before submitting.
 - [ ] Deny microphone permission and confirm a clear, non-crashing error message instead.
 - [ ] View a Run Report (or the new document preview) whose markdown contains a ` ```mermaid ` fenced block and confirm it renders as an actual diagram, not a code block.
 - [ ] Feed Mermaid source that doesn't parse and confirm it falls back to showing the raw text rather than a blank gap.

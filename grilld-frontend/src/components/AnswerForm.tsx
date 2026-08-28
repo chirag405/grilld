@@ -28,10 +28,11 @@ const SKIP_PHRASE = "I'd like to skip this question for now.";
  *
  * voice_primary adds a mic button (VoiceRecorder) next to the textarea -
  * transcribed text lands in the textarea for the user to review/edit, never
- * auto-submitted. No speech-to-text provider is configured on the backend
- * yet (see docs/phases/phase-12/SETUP.md), so recording today surfaces an
- * honest "not turned on" message rather than a fake result; the UI doesn't
- * need to change once a provider is chosen.
+ * auto-submitted. Backed by Fish Audio's hosted ASR (FishAudioTranscriptionService),
+ * active once a deployment sets FISHAUDIO_API_KEY (see
+ * docs/phases/phase-12/SETUP.md); a deployment without one configured falls
+ * back to an honest "not turned on" message rather than a fake result - this
+ * component doesn't need to change either way.
  *
  * "Skip" is real, not a fake affordance: the Interrogator already has a
  * first-class waived_slots concept it applies with its own judgment (not
