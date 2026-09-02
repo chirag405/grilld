@@ -7,7 +7,7 @@
 ![AI service](https://img.shields.io/badge/AI%20service-LangGraph%20%2F%20Deep%20Agents-1a1a2e?style=flat-square)
 ![Frontend](https://img.shields.io/badge/frontend-Next.js%2016%20%2F%20React%2019-000000?style=flat-square&logo=next.js&logoColor=white)
 ![Database](https://img.shields.io/badge/database-PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)
-![LLM](https://img.shields.io/badge/LLM-Claude%20(Anthropic)-D97757?style=flat-square)
+![LLM](<https://img.shields.io/badge/LLM-Claude%20(Anthropic)-D97757?style=flat-square>)
 
 **[→ Try it live](https://grilld-frontend.vercel.app)** — sign in with Google, describe an idea, watch it get interrogated and turned into a blueprint in real time.
 
@@ -59,17 +59,13 @@ Browser ──HTTPS──▶ grilld-frontend  (Next.js, Vercel)
                    Anthropic Claude
 ```
 
-| Service | Stack | Responsibility |
-|---|---|---|
-| [`grilld-backend`](./grilld-backend) | Java 26, Spring Boot, Postgres, Flyway | Google OAuth + JWT auth, the canonical data model, credits/billing (Lemon Squeezy), run orchestration, SSE progress, packaging |
-| [`grilld-ai-service`](./grilld-ai-service) | Python, Deep Agents, LangGraph, Anthropic Claude, Tavily | The interview engine, scale calibration, and the ten-agent specialist roster |
-| [`grilld-frontend`](./grilld-frontend) | Next.js 16, React 19, Tailwind | Interview UI, voice input, live run report, rendered diagrams, run history, billing |
+| Service                                    | Stack                                                    | Responsibility                                                                                                                 |
+| ------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| [`grilld-backend`](./grilld-backend)       | Java 26, Spring Boot, Postgres, Flyway                   | Google OAuth + JWT auth, the canonical data model, credits/billing (Lemon Squeezy), run orchestration, SSE progress, packaging |
+| [`grilld-ai-service`](./grilld-ai-service) | Python, Deep Agents, LangGraph, Anthropic Claude, Tavily | The interview engine, scale calibration, and the ten-agent specialist roster                                                   |
+| [`grilld-frontend`](./grilld-frontend)     | Next.js 16, React 19, Tailwind                           | Interview UI, voice input, live run report, rendered diagrams, run history, billing                                            |
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full annotated map (folder-by-folder, concept-by-concept) and [`docs/decisions-and-technical-architecture.md`](./docs/decisions-and-technical-architecture.md) for why it's split this way.
-
-## Status
-
-All planned backend and frontend phases are built and deployed — see [`docs/phases/`](./docs/phases) for the phase-by-phase build log (each phase folder has a `README`, `TESTING` checklist, and `SETUP` guide), and [`LEARNING.md`](./LEARNING.md) for the running engineering diary of decisions made along the way.
 
 ## Getting started locally
 
@@ -79,16 +75,14 @@ All planned backend and frontend phases are built and deployed — see [`docs/ph
 
 ## Documentation map
 
-| Doc | Covers |
-|---|---|
-| [`docs/README.md`](./docs/README.md) | Product overview and doc index — start here for the *what* and *why* |
-| [`docs/product-and-architecture.md`](./docs/product-and-architecture.md) | Positioning, scale calibration, agent roster, orchestration flow, MVP scope, pricing |
-| [`docs/interrogation-engine.md`](./docs/interrogation-engine.md) | The dynamic slot-graph interview design |
-| [`docs/decisions-and-technical-architecture.md`](./docs/decisions-and-technical-architecture.md) | Every design decision and the full technical architecture |
-| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Code-level tour of the implementation, folder by folder |
-| [`SETUP.md`](./SETUP.md) | Consolidated deployment credentials and local run instructions |
-| [`LEARNING.md`](./LEARNING.md) | The engineering diary — bugs hit, alternatives rejected, research done |
-| [`docs/phases/`](./docs/phases) | Per-phase build docs (architecture, testing gate, setup) |
+| Doc                                                                                              | Covers                                                                               |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| [`docs/README.md`](./docs/README.md)                                                             | Product overview and doc index — start here for the _what_ and _why_                 |
+| [`docs/product-and-architecture.md`](./docs/product-and-architecture.md)                         | Positioning, scale calibration, agent roster, orchestration flow, MVP scope, pricing |
+| [`docs/interrogation-engine.md`](./docs/interrogation-engine.md)                                 | The dynamic slot-graph interview design                                              |
+| [`docs/decisions-and-technical-architecture.md`](./docs/decisions-and-technical-architecture.md) | Every design decision and the full technical architecture                            |
+| [`ARCHITECTURE.md`](./ARCHITECTURE.md)                                                           | Code-level tour of the implementation, folder by folder                              |
+| [`SETUP.md`](./SETUP.md)                                                                         | Consolidated deployment credentials and local run instructions                       |
 
 ## Repo layout
 
@@ -100,6 +94,5 @@ All planned backend and frontend phases are built and deployed — see [`docs/ph
 ├── grilld-frontend/      Next.js UI
 ├── ARCHITECTURE.md       Annotated map of the whole codebase
 ├── SETUP.md              Consolidated deployment credentials
-├── LEARNING.md           Engineering diary
 └── docker-compose.yml    Local Postgres for development
 ```
